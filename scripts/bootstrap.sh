@@ -72,18 +72,21 @@ cloneSamplesRepo() {
     fi
 }
 
-# This will download the .tar.gz
+# This will download the fabric and fabric-ca .tar.gz
+# https://github.com/hyperledger/fabric/releases/download/v2.4.6/hyperledger-fabric-darwin-amd64-2.4.6.tar.gz
+# https://github.com/hyperledger/fabric-ca/releases/download/v1.5.5/hyperledger-fabric-ca-darwin-amd64-1.5.5.tar.gz
 download() {
-    local BINARY_FILE=$1
-    local URL=$2
-    echo "===> Downloading: " "${URL}"
-    curl -L --retry 5 --retry-delay 3 "${URL}" | tar xz || rc=$?
-    if [ -n "$rc" ]; then
-        echo "==> There was an error downloading the binary file."
-        return 22
-    else
-        echo "==> Done."
-    fi
+#    local BINARY_FILE=$1
+#    local URL=$2
+#    echo "===> Downloading: " "${URL}"
+#    curl -L --retry 5 --retry-delay 3 "${URL}" | tar xz || rc=$?
+#    if [ -n "$rc" ]; then
+#        echo "==> There was an error downloading the binary file."
+#        return 22
+#    else
+#        echo "==> Done."
+#    fi
+    echo "==> download Done."
 }
 
 pullBinaries() {
