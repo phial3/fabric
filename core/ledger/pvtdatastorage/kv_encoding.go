@@ -308,9 +308,34 @@ func rangeScanKeysForPurgeMarkers() ([]byte, []byte) {
 
 // driveHashedIndexKeyRangeFromPurgeMarker returns the scan range for hashedIndexKeys for a key specified by the `purgeMarkerKey`.
 // The range covers all the hashedIndexKeys between block 0 and the height specified in the `purgeMarkerVal`
-func driveHashedIndexKeyRangeFromPurgeMarker(purgeMarkerKey, purgeMarkerVal []byte) ([]byte, []byte) {
+func driveHashedIndexKeyRangeFromPurgeMarker(purgeMarkerKey, purgeMarkerVal []byte) ([]byte, []byte, error) {
 	startKey := append(hashedIndexKeyPrefix, purgeMarkerKey[1:]...)
-	endKey := append(startKey, purgeMarkerVal...)
+	version, err := decodePurgeMarkerVal(purgeMarkerVal)
+	if err != nil {
+		return nil, nil, err
+	}
+	version.TxNum += 1 // increase transaction by one so that the private key for the purge operation itself is also included
+	endKey := append(startKey, version.ToBytes()...)
+	return startKey, endKey, nil
+}
+
+func rangeScanKeysForHashedIndexKey(ns, coll string, keyHash []byte) ([]byte, []byte) {
+	startKey := encodeHashedIndexKey(
+		&hashedIndexKey{
+			ns:         ns,
+			coll:       coll,
+			pvtkeyHash: keyHash,
+		},
+	)
+	endKey := encodeHashedIndexKey(
+		&hashedIndexKey{
+			ns:         ns,
+			coll:       coll,
+			pvtkeyHash: keyHash,
+			blkNum:     math.MaxUint64,
+			txNum:      math.MaxUint64,
+		},
+	)
 	return startKey, endKey
 }
 
