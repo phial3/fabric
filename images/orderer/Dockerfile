@@ -4,6 +4,7 @@
 
 ARG GO_VER
 ARG ALPINE_VER
+
 FROM alpine:${ALPINE_VER} as base
 RUN apk add --no-cache tzdata
 # set up nsswitch.conf for Go's "netgo" implementation
@@ -24,7 +25,14 @@ WORKDIR $GOPATH/src/github.com/hyperledger/fabric
 
 FROM golang as orderer
 ARG GO_TAGS
-RUN CGO_ENABLED=0 make orderer GO_TAGS=${GO_TAGS}
+ARG FABRIC_VER
+ENV FABRIC_VER ${FABRIC_VER}
+
+# Disable cgo when building in the container.  This will create a static binary, which can be
+# copied and run in the base alpine container without the libc/musl runtime.
+ENV CGO_ENABLED 0
+
+RUN make orderer GO_TAGS=${GO_TAGS}
 
 FROM base
 ENV FABRIC_CFG_PATH /etc/hyperledger/fabric
