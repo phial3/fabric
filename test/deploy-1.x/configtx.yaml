@@ -1,0 +1,60 @@
+---
+Profiles: # 联盟配置
+  OneOrgOrdererGenesis: # 系统链 全局组织信息
+    Orderer:
+      <<: *OrdererDefaults
+      Organizations:
+        - *OrdererOrg
+    Consortiums:
+      SampleConsortium:
+        Organizations:
+          - *Org0
+          - *Org1
+  TwoOrgChannel: # 业务相关的联盟
+    Consortium: SampleConsortium
+    Application:
+      <<: *ApplicationDefaults
+      Organizations:
+        - *Org0
+        - *Org1
+
+################################################################################
+Organizations:
+  - &OrdererOrg
+    Name: OrdererOrg
+    ID: OrdererMSP
+    MSPDir: crypto-config/ordererOrganizations/imocc.com/msp
+  - &Org0
+    Name: Org0MSP
+    ID: Org0MSP
+    MSPDir: crypto-config/peerOrganizations/org0.imocc.com/msp
+    AnchorPeers:
+      - Host: peer0.org0.imocc.com
+        Port: 7051
+  - &Org1
+    Name: Org1MSP
+    ID: Org1MSP
+    MSPDir: crypto-config/peerOrganizations/org1.imocc.com/msp
+    AnchorPeers:
+      - Host: peer0.org1.imocc.com
+        Port: 7051
+
+################################################################################
+Orderer: &OrdererDefaults
+  # Available types are "solo" and "kafka"
+  OrdererType: solo # 共识机制
+  Addresses:
+    - orderer.imocc.com:7050
+  BatchTimeout: 2s # 出块时间间隔
+  BatchSize:
+    MaxMessageCount: 10
+    AbsoluteMaxBytes: 99 MB
+    PreferredMaxBytes: 512 KB
+  Kafka:
+    Brokers:
+      - 127.0.0.1:9092
+  Organizations:
+
+################################################################################
+Application: &ApplicationDefaults
+  Organizations:
