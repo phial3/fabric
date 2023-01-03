@@ -74,7 +74,7 @@ var _ = Describe("chaincode install", func() {
 		)
 
 		BeforeEach(func() {
-			packageTempDir, err := ioutil.TempDir(network.RootDir, "chaincode-package")
+			packageTempDir, err := os.MkdirTemp(network.RootDir, "chaincode-package")
 			Expect(err).NotTo(HaveOccurred())
 
 			orderer = network.Orderer("orderer")
