@@ -337,7 +337,8 @@ func TestGetOrdererEndpointFromConfigTx(t *testing.T) {
 			nil,
 		)
 		_, err := common.GetOrdererEndpointOfChain("test-channel", signer, mockEndorserClient, cryptoProvider)
-		require.EqualError(t, err, "error unmarshalling channel config: unexpected EOF")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error unmarshalling channel config")
 	})
 
 	t.Run("unloadable-config", func(t *testing.T) {
@@ -354,9 +355,7 @@ func TestGetOrdererEndpointFromConfigTx(t *testing.T) {
 }
 
 func TestConfigFromEnv(t *testing.T) {
-	tempdir, err := ioutil.TempDir("", "peer-clientcert")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempdir)
+	tempdir := t.TempDir()
 
 	// peer client config
 	address, clientConfig, err := common.ConfigFromEnv("peer")

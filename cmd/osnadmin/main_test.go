@@ -28,7 +28,7 @@ import (
 	"github.com/hyperledger/fabric/orderer/common/localconfig"
 	"github.com/hyperledger/fabric/orderer/common/types"
 	"github.com/hyperledger/fabric/protoutil"
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
@@ -677,7 +677,7 @@ var _ = Describe("osnadmin", func() {
 			ordererCACert = filepath.Join(tempDir, "server-ca+intermediate-ca.pem")
 		})
 
-		It("uses the channel participation API to list all application and and the system channel (when it exists)", func() {
+		It("uses the channel participation API to list all application and the system channel (when it exists)", func() {
 			args := []string{
 				"channel",
 				"list",

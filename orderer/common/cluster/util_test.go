@@ -8,11 +8,13 @@ package cluster_test
 
 import (
 	"bytes"
+	"context"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"strings"
 	"sync"
 	"testing"
@@ -21,6 +23,8 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric-protos-go/common"
 	"github.com/hyperledger/fabric-protos-go/msp"
+	"github.com/hyperledger/fabric-protos-go/orderer"
+	"github.com/hyperledger/fabric/bccsp"
 	"github.com/hyperledger/fabric/bccsp/sw"
 	"github.com/hyperledger/fabric/common/capabilities"
 	"github.com/hyperledger/fabric/common/channelconfig"
@@ -28,6 +32,7 @@ import (
 	"github.com/hyperledger/fabric/common/configtx/test"
 	"github.com/hyperledger/fabric/common/crypto/tlsgen"
 	"github.com/hyperledger/fabric/common/flogging"
+	"github.com/hyperledger/fabric/common/metrics/disabled"
 	"github.com/hyperledger/fabric/common/policies"
 	"github.com/hyperledger/fabric/core/config/configtest"
 	"github.com/hyperledger/fabric/internal/configtxgen/encoder"
@@ -178,71 +183,6 @@ func TestStandardDialer(t *testing.T) {
 	require.ErrorContains(t, err, "error adding root certificate")
 }
 
-func TestVerifyBlockSignature(t *testing.T) {
-	verifier := &mocks.BlockVerifier{}
-	var nilConfigEnvelope *common.ConfigEnvelope
-	verifier.On("VerifyBlockSignature", mock.Anything, nilConfigEnvelope).Return(nil)
-
-	block := createBlockChain(3, 3)[0]
-
-	// The block should have a valid structure
-	err := cluster.VerifyBlockSignature(block, verifier, nil)
-	require.NoError(t, err)
-
-	for _, testCase := range []struct {
-		name          string
-		mutateBlock   func(*common.Block) *common.Block
-		errorContains string
-	}{
-		{
-			name:          "nil metadata",
-			errorContains: "no metadata in block",
-			mutateBlock: func(block *common.Block) *common.Block {
-				block.Metadata = nil
-				return block
-			},
-		},
-		{
-			name:          "zero metadata slice",
-			errorContains: "no metadata in block",
-			mutateBlock: func(block *common.Block) *common.Block {
-				block.Metadata.Metadata = nil
-				return block
-			},
-		},
-		{
-			name:          "nil metadata",
-			errorContains: "failed unmarshalling medatata for signatures",
-			mutateBlock: func(block *common.Block) *common.Block {
-				block.Metadata.Metadata[0] = []byte{1, 2, 3}
-				return block
-			},
-		},
-		{
-			name:          "bad signature header",
-			errorContains: "failed unmarshalling signature header",
-			mutateBlock: func(block *common.Block) *common.Block {
-				metadata := protoutil.GetMetadataFromBlockOrPanic(block, common.BlockMetadataIndex_SIGNATURES)
-				metadata.Signatures[0].SignatureHeader = []byte{1, 2, 3}
-				block.Metadata.Metadata[common.BlockMetadataIndex_SIGNATURES] = protoutil.MarshalOrPanic(metadata)
-				return block
-			},
-		},
-	} {
-		testCase := testCase
-		t.Run(testCase.name, func(t *testing.T) {
-			// Create a copy of the block
-			blockCopy := &common.Block{}
-			err := proto.Unmarshal(protoutil.MarshalOrPanic(block), blockCopy)
-			require.NoError(t, err)
-			// Mutate the block to sabotage it
-			blockCopy = testCase.mutateBlock(blockCopy)
-			err = cluster.VerifyBlockSignature(blockCopy, verifier, nil)
-			require.Contains(t, err.Error(), testCase.errorContains)
-		})
-	}
-}
-
 func TestVerifyBlockHash(t *testing.T) {
 	var start uint64 = 3
 	var end uint64 = 23
@@ -317,207 +257,6 @@ func TestVerifyBlockHash(t *testing.T) {
 			blockchain = testCase.mutateBlockSequence(blockchain)
 			err := verify(blockchain)
 			require.EqualError(t, err, testCase.errorContains)
-		})
-	}
-}
-
-func TestVerifyBlocks(t *testing.T) {
-	var sigSet1 []*protoutil.SignedData
-	var sigSet2 []*protoutil.SignedData
-
-	configEnvelope1 := &common.ConfigEnvelope{
-		Config: &common.Config{
-			Sequence: 1,
-		},
-	}
-	configEnvelope2 := &common.ConfigEnvelope{
-		Config: &common.Config{
-			Sequence: 2,
-		},
-	}
-	configTransaction := func(envelope *common.ConfigEnvelope) *common.Envelope {
-		return &common.Envelope{
-			Payload: protoutil.MarshalOrPanic(&common.Payload{
-				Data: protoutil.MarshalOrPanic(envelope),
-				Header: &common.Header{
-					ChannelHeader: protoutil.MarshalOrPanic(&common.ChannelHeader{
-						Type: int32(common.HeaderType_CONFIG),
-					}),
-				},
-			}),
-		}
-	}
-
-	for _, testCase := range []struct {
-		name                  string
-		configureVerifier     func(*mocks.BlockVerifier)
-		mutateBlockSequence   func([]*common.Block) []*common.Block
-		expectedError         string
-		verifierExpectedCalls int
-	}{
-		{
-			name: "empty sequence",
-			mutateBlockSequence: func(blockSequence []*common.Block) []*common.Block {
-				return nil
-			},
-			expectedError: "buffer is empty",
-		},
-		{
-			name: "prev hash mismatch",
-			mutateBlockSequence: func(blockSequence []*common.Block) []*common.Block {
-				blockSequence[len(blockSequence)/2].Header.PreviousHash = []byte{7}
-				return blockSequence
-			},
-			expectedError: "block [74]'s hash " +
-				"(5cb4bd1b6a73f81afafd96387bb7ff4473c2425929d0862586f5fbfa12d762dd) " +
-				"mismatches block [75]'s prev block hash (07)",
-		},
-		{
-			name: "bad signature",
-			mutateBlockSequence: func(blockSequence []*common.Block) []*common.Block {
-				return blockSequence
-			},
-			configureVerifier: func(verifier *mocks.BlockVerifier) {
-				var nilEnvelope *common.ConfigEnvelope
-				verifier.On("VerifyBlockSignature", mock.Anything, nilEnvelope).Return(errors.New("bad signature"))
-			},
-			expectedError:         "bad signature",
-			verifierExpectedCalls: 1,
-		},
-		{
-			name: "block that its type cannot be classified",
-			mutateBlockSequence: func(blockSequence []*common.Block) []*common.Block {
-				blockSequence[len(blockSequence)/2].Data = &common.BlockData{
-					Data: [][]byte{protoutil.MarshalOrPanic(&common.Envelope{})},
-				}
-				blockSequence[len(blockSequence)/2].Header.DataHash = protoutil.BlockDataHash(blockSequence[len(blockSequence)/2].Data)
-				assignHashes(blockSequence)
-				return blockSequence
-			},
-			expectedError: "nil header in payload",
-		},
-		{
-			name: "config blocks in the sequence need to be verified and one of them is improperly signed",
-			mutateBlockSequence: func(blockSequence []*common.Block) []*common.Block {
-				var err error
-				// Put a config transaction in block n / 4
-				blockSequence[len(blockSequence)/4].Data = &common.BlockData{
-					Data: [][]byte{protoutil.MarshalOrPanic(configTransaction(configEnvelope1))},
-				}
-				blockSequence[len(blockSequence)/4].Header.DataHash = protoutil.BlockDataHash(blockSequence[len(blockSequence)/4].Data)
-
-				// Put a config transaction in block n / 2
-				blockSequence[len(blockSequence)/2].Data = &common.BlockData{
-					Data: [][]byte{protoutil.MarshalOrPanic(configTransaction(configEnvelope2))},
-				}
-				blockSequence[len(blockSequence)/2].Header.DataHash = protoutil.BlockDataHash(blockSequence[len(blockSequence)/2].Data)
-
-				assignHashes(blockSequence)
-
-				sigSet1, err = cluster.SignatureSetFromBlock(blockSequence[len(blockSequence)/4])
-				require.NoError(t, err)
-				sigSet2, err = cluster.SignatureSetFromBlock(blockSequence[len(blockSequence)/2])
-				require.NoError(t, err)
-
-				return blockSequence
-			},
-			configureVerifier: func(verifier *mocks.BlockVerifier) {
-				var nilEnvelope *common.ConfigEnvelope
-				// The first config block, validates correctly.
-				verifier.On("VerifyBlockSignature", sigSet1, nilEnvelope).Return(nil).Once()
-				// However, the second config block - validates incorrectly.
-				confEnv1 := &common.ConfigEnvelope{}
-				proto.Unmarshal(protoutil.MarshalOrPanic(configEnvelope1), confEnv1)
-				verifier.On("VerifyBlockSignature", sigSet2, confEnv1).Return(errors.New("bad signature")).Once()
-			},
-			expectedError:         "bad signature",
-			verifierExpectedCalls: 2,
-		},
-		{
-			name: "config block in the sequence needs to be verified, and it is properly signed",
-			mutateBlockSequence: func(blockSequence []*common.Block) []*common.Block {
-				var err error
-				// Put a config transaction in block n / 4
-				blockSequence[len(blockSequence)/4].Data = &common.BlockData{
-					Data: [][]byte{protoutil.MarshalOrPanic(configTransaction(configEnvelope1))},
-				}
-				blockSequence[len(blockSequence)/4].Header.DataHash = protoutil.BlockDataHash(blockSequence[len(blockSequence)/4].Data)
-
-				assignHashes(blockSequence)
-
-				sigSet1, err = cluster.SignatureSetFromBlock(blockSequence[len(blockSequence)/4])
-				require.NoError(t, err)
-
-				sigSet2, err = cluster.SignatureSetFromBlock(blockSequence[len(blockSequence)-1])
-				require.NoError(t, err)
-
-				return blockSequence
-			},
-			configureVerifier: func(verifier *mocks.BlockVerifier) {
-				var nilEnvelope *common.ConfigEnvelope
-				confEnv1 := &common.ConfigEnvelope{}
-				proto.Unmarshal(protoutil.MarshalOrPanic(configEnvelope1), confEnv1)
-				verifier.On("VerifyBlockSignature", sigSet1, nilEnvelope).Return(nil).Once()
-				verifier.On("VerifyBlockSignature", sigSet2, confEnv1).Return(nil).Once()
-			},
-			// We have a single config block in the 'middle' of the chain, so we have 2 verifications total:
-			// The last block, and the config block.
-			verifierExpectedCalls: 2,
-		},
-		{
-			name: "last two blocks are config blocks, last block only verified once",
-			mutateBlockSequence: func(blockSequence []*common.Block) []*common.Block {
-				var err error
-				// Put a config transaction in block n-2 and in n-1
-				blockSequence[len(blockSequence)-2].Data = &common.BlockData{
-					Data: [][]byte{protoutil.MarshalOrPanic(configTransaction(configEnvelope1))},
-				}
-				blockSequence[len(blockSequence)-2].Header.DataHash = protoutil.BlockDataHash(blockSequence[len(blockSequence)-2].Data)
-
-				blockSequence[len(blockSequence)-1].Data = &common.BlockData{
-					Data: [][]byte{protoutil.MarshalOrPanic(configTransaction(configEnvelope2))},
-				}
-				blockSequence[len(blockSequence)-1].Header.DataHash = protoutil.BlockDataHash(blockSequence[len(blockSequence)-1].Data)
-
-				assignHashes(blockSequence)
-
-				sigSet1, err = cluster.SignatureSetFromBlock(blockSequence[len(blockSequence)-2])
-				require.NoError(t, err)
-
-				sigSet2, err = cluster.SignatureSetFromBlock(blockSequence[len(blockSequence)-1])
-				require.NoError(t, err)
-
-				return blockSequence
-			},
-			configureVerifier: func(verifier *mocks.BlockVerifier) {
-				var nilEnvelope *common.ConfigEnvelope
-				confEnv1 := &common.ConfigEnvelope{}
-				proto.Unmarshal(protoutil.MarshalOrPanic(configEnvelope1), confEnv1)
-				verifier.On("VerifyBlockSignature", sigSet1, nilEnvelope).Return(nil).Once()
-				// We ensure that the signature set of the last block is verified using the config envelope of the block
-				// before it.
-				verifier.On("VerifyBlockSignature", sigSet2, confEnv1).Return(nil).Once()
-				// Note that we do not record a call to verify the last block, with the config envelope extracted from the block itself.
-			},
-			// We have 2 config blocks, yet we only verify twice- the first config block, and the next config block, but no more,
-			// since the last block is a config block.
-			verifierExpectedCalls: 2,
-		},
-	} {
-		testCase := testCase
-		t.Run(testCase.name, func(t *testing.T) {
-			blockchain := createBlockChain(50, 100)
-			blockchain = testCase.mutateBlockSequence(blockchain)
-			verifier := &mocks.BlockVerifier{}
-			if testCase.configureVerifier != nil {
-				testCase.configureVerifier(verifier)
-			}
-			err := cluster.VerifyBlocks(blockchain, verifier)
-			if testCase.expectedError != "" {
-				require.EqualError(t, err, testCase.expectedError)
-			} else {
-				require.NoError(t, err)
-			}
 		})
 	}
 }
@@ -691,12 +430,12 @@ func TestConfigFromBlockBadInput(t *testing.T) {
 		},
 		{
 			name:          "invalid payload",
-			expectedError: "error unmarshalling Envelope: proto: common.Envelope: illegal tag 0 (wire type 1)",
+			expectedError: "error unmarshalling Envelope",
 			block:         &common.Block{Data: &common.BlockData{Data: [][]byte{{1, 2, 3}}}},
 		},
 		{
 			name:          "bad genesis block",
-			expectedError: "invalid config envelope: proto: common.ConfigEnvelope: illegal tag 0 (wire type 1)",
+			expectedError: "invalid config envelope",
 			block: &common.Block{
 				Header: &common.BlockHeader{}, Data: &common.BlockData{Data: [][]byte{protoutil.MarshalOrPanic(&common.Envelope{
 					Payload: protoutil.MarshalOrPanic(&common.Payload{
@@ -707,19 +446,19 @@ func TestConfigFromBlockBadInput(t *testing.T) {
 		},
 		{
 			name:          "invalid envelope in block",
-			expectedError: "error unmarshalling Envelope: proto: common.Envelope: illegal tag 0 (wire type 1)",
+			expectedError: "error unmarshalling Envelope",
 			block:         &common.Block{Data: &common.BlockData{Data: [][]byte{{1, 2, 3}}}},
 		},
 		{
 			name:          "invalid payload in block envelope",
-			expectedError: "error unmarshalling Payload: proto: common.Payload: illegal tag 0 (wire type 1)",
+			expectedError: "error unmarshalling Payload",
 			block: &common.Block{Data: &common.BlockData{Data: [][]byte{protoutil.MarshalOrPanic(&common.Envelope{
 				Payload: []byte{1, 2, 3},
 			})}}},
 		},
 		{
 			name:          "invalid channel header",
-			expectedError: "error unmarshalling ChannelHeader: proto: common.ChannelHeader: illegal tag 0 (wire type 1)",
+			expectedError: "error unmarshalling ChannelHeader",
 			block: &common.Block{
 				Header: &common.BlockHeader{Number: 1},
 				Data: &common.BlockData{Data: [][]byte{protoutil.MarshalOrPanic(&common.Envelope{
@@ -733,7 +472,7 @@ func TestConfigFromBlockBadInput(t *testing.T) {
 		},
 		{
 			name:          "invalid config block",
-			expectedError: "invalid config envelope: proto: common.ConfigEnvelope: illegal tag 0 (wire type 1)",
+			expectedError: "invalid config envelope",
 			block: &common.Block{
 				Header: &common.BlockHeader{},
 				Data: &common.BlockData{Data: [][]byte{protoutil.MarshalOrPanic(&common.Envelope{
@@ -752,7 +491,8 @@ func TestConfigFromBlockBadInput(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			conf, err := cluster.ConfigFromBlock(testCase.block)
 			require.Nil(t, conf)
-			require.EqualError(t, err, testCase.expectedError)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), testCase.expectedError)
 		})
 	}
 }
@@ -851,13 +591,13 @@ func TestBlockVerifierAssembler(t *testing.T) {
 		}, "mychannel")
 		require.NoError(t, err)
 
-		require.NoError(t, verifier.VerifyBlockSignature(nil, nil))
+		require.Error(t, verifier(nil, nil))
 	})
 
 	t.Run("Bad config envelope", func(t *testing.T) {
 		bva := &cluster.BlockVerifierAssembler{BCCSP: cryptoProvider}
 		_, err := bva.VerifierFromConfig(&common.ConfigEnvelope{}, "mychannel")
-		require.EqualError(t, err, "failed extracting bundle from envelope: channelconfig Config cannot be nil")
+		require.EqualError(t, err, "channelconfig Config cannot be nil")
 	})
 }
 
@@ -933,7 +673,10 @@ func TestVerificationRegistryRegisterVerifier(t *testing.T) {
 	block := &common.Block{}
 	require.NoError(t, proto.Unmarshal(blockBytes, block))
 
-	verifier := &mocks.BlockVerifier{}
+	mockErr := errors.New("Mock error")
+	verifier := func(header *common.BlockHeader, metadata *common.BlockMetadata) error {
+		return mockErr
+	}
 
 	verifierFactory := &mocks.VerifierFactory{}
 	verifierFactory.On("VerifierFromConfig",
@@ -941,12 +684,12 @@ func TestVerificationRegistryRegisterVerifier(t *testing.T) {
 
 	registry := &cluster.VerificationRegistry{
 		Logger:             flogging.MustGetLogger("test"),
-		VerifiersByChannel: make(map[string]cluster.BlockVerifier),
+		VerifiersByChannel: make(map[string]protoutil.BlockVerifierFunc),
 		VerifierFactory:    verifierFactory,
 	}
 
 	var loadCount int
-	registry.LoadVerifier = func(chain string) cluster.BlockVerifier {
+	registry.LoadVerifier = func(chain string) protoutil.BlockVerifierFunc {
 		require.Equal(t, "mychannel", chain)
 		loadCount++
 		return verifier
@@ -957,7 +700,7 @@ func TestVerificationRegistryRegisterVerifier(t *testing.T) {
 
 	registry.RegisterVerifier("mychannel")
 	v = registry.RetrieveVerifier("mychannel")
-	require.Equal(t, verifier, v)
+	require.Same(t, verifier(nil, nil), v(nil, nil))
 	require.Equal(t, 1, loadCount)
 
 	// If the verifier exists, this is a no-op
@@ -975,16 +718,19 @@ func TestVerificationRegistry(t *testing.T) {
 	flogging.ActivateSpec("test=DEBUG")
 	defer flogging.Reset()
 
-	verifier := &mocks.BlockVerifier{}
+	mockErr := errors.New("Mock error")
+	verifier := func(header *common.BlockHeader, metadata *common.BlockMetadata) error {
+		return mockErr
+	}
 
 	for _, testCase := range []struct {
 		description           string
-		verifiersByChannel    map[string]cluster.BlockVerifier
+		verifiersByChannel    map[string]protoutil.BlockVerifierFunc
 		blockCommitted        *common.Block
 		channelCommitted      string
 		channelRetrieved      string
-		expectedVerifier      cluster.BlockVerifier
-		verifierFromConfig    cluster.BlockVerifier
+		expectedVerifier      protoutil.BlockVerifierFunc
+		verifierFromConfig    protoutil.BlockVerifierFunc
 		verifierFromConfigErr error
 		loggedMessages        map[string]struct{}
 	}{
@@ -1036,7 +782,7 @@ func TestVerificationRegistry(t *testing.T) {
 				"Committed config block [0] for channel bar": {},
 			},
 			expectedVerifier:   nil,
-			verifiersByChannel: make(map[string]cluster.BlockVerifier),
+			verifiersByChannel: make(map[string]protoutil.BlockVerifierFunc),
 		},
 		{
 			description:        "valid block and verifier from config succeeds",
@@ -1048,7 +794,7 @@ func TestVerificationRegistry(t *testing.T) {
 				"Committed config block [0] for channel bar": {},
 			},
 			expectedVerifier:   verifier,
-			verifiersByChannel: make(map[string]cluster.BlockVerifier),
+			verifiersByChannel: make(map[string]protoutil.BlockVerifierFunc),
 		},
 	} {
 		t.Run(testCase.description, func(t *testing.T) {
@@ -1073,7 +819,12 @@ func TestVerificationRegistry(t *testing.T) {
 			verifier := registry.RetrieveVerifier(testCase.channelRetrieved)
 
 			require.Equal(t, testCase.loggedMessages, loggedEntriesByMethods)
-			require.Equal(t, testCase.expectedVerifier, verifier)
+			if testCase.expectedVerifier == nil {
+				require.Nil(t, verifier)
+			} else {
+				require.NotNil(t, verifier)
+				require.Same(t, testCase.expectedVerifier(nil, nil), verifier(nil, nil))
+			}
 		})
 	}
 }
@@ -1225,4 +976,184 @@ func TestComparisonMemoizer(t *testing.T) {
 		require.Equal(t, i%2 != 0, odd)
 		require.LessOrEqual(t, m.Size(), int(m.MaxEntries))
 	}
+}
+
+//go:generate counterfeiter -o mocks/bccsp.go --fake-name BCCSP . iBCCSP
+
+type iBCCSP interface {
+	bccsp.BCCSP
+}
+
+func TestBlockVerifierBuilderEmptyBlock(t *testing.T) {
+	bvfunc := cluster.BlockVerifierBuilder(&mocks.BCCSP{})
+	block := &common.Block{}
+	verifier := bvfunc(block)
+	require.ErrorContains(t, verifier(nil, nil), "initialized with an invalid config block: block contains no data")
+}
+
+func TestBlockVerifierBuilderNoConfigBlock(t *testing.T) {
+	bvfunc := cluster.BlockVerifierBuilder(&mocks.BCCSP{})
+	block := createBlockChain(3, 3)[0]
+	verifier := bvfunc(block)
+	md := &common.BlockMetadata{}
+	require.ErrorContains(t, verifier(nil, md), "initialized with an invalid config block: channelconfig Config cannot be nil")
+}
+
+func TestBlockVerifierFunc(t *testing.T) {
+	block := sampleConfigBlock()
+	bvfunc := cluster.BlockVerifierBuilder(&mocks.BCCSP{})
+
+	verifier := bvfunc(block)
+
+	header := &common.BlockHeader{}
+	md := &common.BlockMetadata{
+		Metadata: [][]byte{
+			protoutil.MarshalOrPanic(&common.Metadata{Signatures: []*common.MetadataSignature{
+				{
+					Signature:        []byte{},
+					IdentifierHeader: protoutil.MarshalOrPanic(&common.IdentifierHeader{Identifier: 1}),
+				},
+			}}),
+		},
+	}
+
+	err := verifier(header, md)
+	require.NoError(t, err)
+}
+
+func sampleConfigBlock() *common.Block {
+	return &common.Block{
+		Header: &common.BlockHeader{
+			PreviousHash: []byte("foo"),
+		},
+		Data: &common.BlockData{
+			Data: [][]byte{
+				protoutil.MarshalOrPanic(&common.Envelope{
+					Payload: protoutil.MarshalOrPanic(&common.Payload{
+						Header: &common.Header{
+							ChannelHeader: protoutil.MarshalOrPanic(&common.ChannelHeader{
+								Type:      int32(common.HeaderType_CONFIG),
+								ChannelId: "mychannel",
+							}),
+						},
+						Data: protoutil.MarshalOrPanic(&common.ConfigEnvelope{
+							Config: &common.Config{
+								ChannelGroup: &common.ConfigGroup{
+									Values: map[string]*common.ConfigValue{
+										"Capabilities": {
+											Value: protoutil.MarshalOrPanic(&common.Capabilities{
+												Capabilities: map[string]*common.Capability{"V3_0": {}},
+											}),
+										},
+										"HashingAlgorithm": {
+											Value: protoutil.MarshalOrPanic(&common.HashingAlgorithm{Name: "SHA256"}),
+										},
+										"BlockDataHashingStructure": {
+											Value: protoutil.MarshalOrPanic(&common.BlockDataHashingStructure{Width: math.MaxUint32}),
+										},
+									},
+									Groups: map[string]*common.ConfigGroup{
+										"Orderer": {
+											Policies: map[string]*common.ConfigPolicy{
+												"BlockValidation": {
+													Policy: &common.Policy{
+														Type: 3,
+													},
+												},
+											},
+											Values: map[string]*common.ConfigValue{
+												"BatchSize": {
+													Value: protoutil.MarshalOrPanic(&orderer.BatchSize{
+														MaxMessageCount:   500,
+														AbsoluteMaxBytes:  10485760,
+														PreferredMaxBytes: 2097152,
+													}),
+												},
+												"BatchTimeout": {
+													Value: protoutil.MarshalOrPanic(&orderer.BatchTimeout{
+														Timeout: "2s",
+													}),
+												},
+												"Capabilities": {
+													Value: protoutil.MarshalOrPanic(&common.Capabilities{
+														Capabilities: map[string]*common.Capability{"V3_0": {}},
+													}),
+												},
+												"ConsensusType": {
+													Value: protoutil.MarshalOrPanic(&common.BlockData{Data: [][]byte{[]byte("BFT")}}),
+												},
+												"Orderers": {
+													Value: protoutil.MarshalOrPanic(&common.Orderers{
+														ConsenterMapping: []*common.Consenter{
+															{
+																Id:       1,
+																Host:     "host1",
+																Port:     8001,
+																MspId:    "msp1",
+																Identity: []byte("identity1"),
+															},
+														},
+													}),
+												},
+											},
+										},
+									},
+								},
+							},
+						}),
+					}),
+					Signature: []byte("bar"),
+				}),
+			},
+		},
+	}
+}
+
+func TestGetTLSSessionBinding(t *testing.T) {
+	serverCert, err := ca.NewServerCertKeyPair("127.0.0.1")
+	require.NoError(t, err)
+
+	srv, err := comm.NewGRPCServer("127.0.0.1:0", comm.ServerConfig{
+		SecOpts: comm.SecureOptions{
+			Certificate: serverCert.Cert,
+			Key:         serverCert.Key,
+			UseTLS:      true,
+		},
+	})
+	require.NoError(t, err)
+
+	handler := &mocks.Handler{}
+
+	svc := &cluster.ClusterService{
+		MinimumExpirationWarningInterval: time.Second * 2,
+		StreamCountReporter: &cluster.StreamCountReporter{
+			Metrics: cluster.NewMetrics(&disabled.Provider{}),
+		},
+		Logger:              flogging.MustGetLogger("test"),
+		StepLogger:          flogging.MustGetLogger("test"),
+		RequestHandler:      handler,
+		MembershipByChannel: make(map[string]*cluster.ChannelMembersConfig),
+	}
+
+	orderer.RegisterClusterNodeServiceServer(srv.Server(), svc)
+	go srv.Start()
+	defer srv.Stop()
+
+	clientConf := comm.ClientConfig{
+		DialTimeout: time.Second * 3,
+		SecOpts: comm.SecureOptions{
+			ServerRootCAs: [][]byte{ca.CertBytes()},
+			UseTLS:        true,
+		},
+	}
+	conn, err := clientConf.Dial(srv.Address())
+	require.NoError(t, err)
+
+	cl := orderer.NewClusterNodeServiceClient(conn)
+	stream, err := cl.Step(context.Background())
+	require.NoError(t, err)
+
+	binding, err := cluster.GetTLSSessionBinding(stream.Context(), []byte{1, 2, 3, 4, 5})
+	require.NoError(t, err)
+	require.Len(t, binding, 32)
 }

@@ -14,7 +14,6 @@ import (
 	"encoding/asn1"
 	"encoding/pem"
 	"io"
-	"io/ioutil"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -33,7 +32,7 @@ func LoadPrivateKey(keystorePath string) (*ecdsa.PrivateKey, error) {
 			return nil
 		}
 
-		rawKey, err := ioutil.ReadFile(path)
+		rawKey, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}
@@ -88,7 +87,7 @@ func GeneratePrivateKey(keystorePath string) (*ecdsa.PrivateKey, error) {
 	pemEncoded := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: pkcs8Encoded})
 
 	keyFile := filepath.Join(keystorePath, "priv_sk")
-	err = ioutil.WriteFile(keyFile, pemEncoded, 0o600)
+	err = os.WriteFile(keyFile, pemEncoded, 0o600)
 	if err != nil {
 		return nil, errors.WithMessagef(err, "failed to save private key to file %s", keyFile)
 	}
@@ -96,7 +95,8 @@ func GeneratePrivateKey(keystorePath string) (*ecdsa.PrivateKey, error) {
 	return priv, err
 }
 
-/**
+/*
+*
 ECDSA signer implements the crypto.Signer interface for ECDSA keys.  The
 Sign method ensures signatures are created with Low S values since Fabric
 normalizes all signatures to Low S.
@@ -128,11 +128,12 @@ func (e *ECDSASigner) Sign(rand io.Reader, digest []byte, opts crypto.SignerOpts
 		},
 	)
 
-	// return marshaled aignature
+	// return marshaled signature
 	return asn1.Marshal(sig)
 }
 
-/**
+/*
+*
 When using ECDSA, both (r,s) and (r, -s mod n) are valid signatures.  In order
 to protect against signature malleability attacks, Fabric normalizes all
 signatures to a canonical form where s is at most half the order of the curve.

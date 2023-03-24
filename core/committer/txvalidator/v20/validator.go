@@ -166,17 +166,17 @@ func (v *TxValidator) chainExists(chain string) bool {
 // of the goroutines) from the results channel. The goroutines
 // perform the validation of the txs in the block and enqueue the
 // validation result in the results channel. A few note-worthy facts:
-// 1) to keep the approach simple, the committer thread enqueues
-//    all transactions in the block and then moves on to reading the
-//    results.
-// 2) for parallel validation to work, it is important that the
-//    validation function does not change the state of the system.
-//    Otherwise the order in which validation is perform matters
-//    and we have to resort to sequential validation (or some locking).
-//    This is currently true, because the only function that affects
-//    state is when a config transaction is received, but they are
-//    guaranteed to be alone in the block. If/when this assumption
-//    is violated, this code must be changed.
+//  1. to keep the approach simple, the committer thread enqueues
+//     all transactions in the block and then moves on to reading the
+//     results.
+//  2. for parallel validation to work, it is important that the
+//     validation function does not change the state of the system.
+//     Otherwise the order in which validation is perform matters
+//     and we have to resort to sequential validation (or some locking).
+//     This is currently true, because the only function that affects
+//     state is when a config transaction is received, but they are
+//     guaranteed to be alone in the block. If/when this assumption
+//     is violated, this code must be changed.
 func (v *TxValidator) Validate(block *common.Block) error {
 	var err error
 	var errPos int
@@ -406,6 +406,7 @@ func (v *TxValidator) validateTx(req *blockValidationRequest, results chan<- *bl
 				return
 			}
 
+			logger.Debugw("Config transaction envelope passed validation checks", "channel", channel)
 			if err := v.ChannelResources.Apply(configEnvelope); err != nil {
 				err = errors.WithMessage(err, "error validating config which passed initial validity checks")
 				logger.Criticalf("%+v", err)
@@ -415,7 +416,7 @@ func (v *TxValidator) validateTx(req *blockValidationRequest, results chan<- *bl
 				}
 				return
 			}
-			logger.Debugf("config transaction received for chain %s", channel)
+			logger.Infow("Config transaction validated and applied to channel resources", "channel", channel)
 		} else {
 			logger.Warningf("Unknown transaction type [%s] in block number [%d] transaction index [%d]",
 				common.HeaderType(chdr.Type), block.Header.Number, tIdx)

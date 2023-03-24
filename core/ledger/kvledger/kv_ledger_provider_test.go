@@ -8,7 +8,6 @@ package kvledger
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -54,9 +53,8 @@ func TestLedgerProvider(t *testing.T) {
 }
 
 func testLedgerProvider(t *testing.T, enableHistoryDB bool) {
-	conf, cleanup := testConfig(t)
+	conf := testConfig(t)
 	conf.HistoryDBConfig.Enabled = enableHistoryDB
-	defer cleanup()
 	provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
 	numLedgers := 10
 	existingLedgerIDs, err := provider.List()
@@ -119,26 +117,42 @@ func testLedgerProvider(t *testing.T, enableHistoryDB bool) {
 	require.EqualError(t, err, "cannot open ledger [ledger_000010], ledger does not exist")
 }
 
-func TestGetActiveLedgerIDsIteratorError(t *testing.T) {
-	conf, cleanup := testConfig(t)
-	defer cleanup()
+func TestGetLedger(t *testing.T) {
+	conf := testConfig(t)
 	provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
 
-	for i := 0; i < 2; i++ {
-		genesisBlock, _ := configtxtest.MakeGenesisBlock(constructTestLedgerID(i))
-		_, err := provider.CreateFromGenesisBlock(genesisBlock)
-		require.NoError(t, err)
+	inputTestData := map[string]msgs.Status{
+		"1": msgs.Status_UNDER_CONSTRUCTION,
+		"2": msgs.Status_UNDER_DELETION,
+		"3": msgs.Status_ACTIVE,
+		"4": msgs.Status_ACTIVE,
+		"5": msgs.Status_INACTIVE,
+		"6": msgs.Status_INACTIVE,
 	}
+
+	for ledgerID, status := range inputTestData {
+		require.NoError(t, provider.idStore.createLedgerID(ledgerID, &msgs.LedgerMetadata{Status: status}))
+	}
+
+	l, err := provider.idStore.getActiveLedgerIDs()
+	require.NoError(t, err)
+	require.Equal(t, []string{"3", "4"}, l)
+
+	l, err = provider.idStore.getActiveAndInactiveLedgerIDs()
+	require.NoError(t, err)
+	require.Equal(t, []string{"3", "4", "5", "6"}, l)
 
 	// close provider to trigger db error
 	provider.Close()
-	_, err := provider.idStore.getActiveLedgerIDs()
+	_, err = provider.idStore.getActiveLedgerIDs()
+	require.EqualError(t, err, "error getting ledger ids from idStore: leveldb: closed")
+
+	_, err = provider.idStore.getActiveAndInactiveLedgerIDs()
 	require.EqualError(t, err, "error getting ledger ids from idStore: leveldb: closed")
 }
 
 func TestLedgerMetataDataUnmarshalError(t *testing.T) {
-	conf, cleanup := testConfig(t)
-	defer cleanup()
+	conf := testConfig(t)
 	provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
 	defer provider.Close()
 
@@ -151,15 +165,14 @@ func TestLedgerMetataDataUnmarshalError(t *testing.T) {
 	require.NoError(t, provider.idStore.db.Put(metadataKey(ledgerID), []byte("invalid"), true))
 
 	_, err = provider.List()
-	require.EqualError(t, err, "error unmarshalling ledger metadata: unexpected EOF")
+	require.ErrorContains(t, err, "error unmarshalling ledger metadata")
 
 	_, err = provider.Open(ledgerID)
-	require.EqualError(t, err, "error unmarshalling ledger metadata: unexpected EOF")
+	require.ErrorContains(t, err, "error unmarshalling ledger metadata")
 }
 
 func TestNewProviderIdStoreFormatError(t *testing.T) {
-	conf, cleanup := testConfig(t)
-	defer cleanup()
+	conf := testConfig(t)
 
 	require.NoError(t, testutil.Unzip("tests/testdata/v11/sample_ledgers/ledgersData.zip", conf.RootFSPath, false))
 
@@ -175,8 +188,7 @@ func TestNewProviderIdStoreFormatError(t *testing.T) {
 }
 
 func TestUpgradeIDStoreFormatDBError(t *testing.T) {
-	conf, cleanup := testConfig(t)
-	defer cleanup()
+	conf := testConfig(t)
 	provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
 	provider.Close()
 
@@ -186,8 +198,7 @@ func TestUpgradeIDStoreFormatDBError(t *testing.T) {
 }
 
 func TestCheckUpgradeEligibilityV1x(t *testing.T) {
-	conf, cleanup := testConfig(t)
-	defer cleanup()
+	conf := testConfig(t)
 	dbPath := LedgerProviderPath(conf.RootFSPath)
 	db := leveldbhelper.CreateDB(&leveldbhelper.Conf{DBPath: dbPath})
 	idStore := &idStore{db, dbPath}
@@ -204,8 +215,7 @@ func TestCheckUpgradeEligibilityV1x(t *testing.T) {
 }
 
 func TestCheckUpgradeEligibilityCurrentVersion(t *testing.T) {
-	conf, cleanup := testConfig(t)
-	defer cleanup()
+	conf := testConfig(t)
 	dbPath := LedgerProviderPath(conf.RootFSPath)
 	db := leveldbhelper.CreateDB(&leveldbhelper.Conf{DBPath: dbPath})
 	idStore := &idStore{db, dbPath}
@@ -221,8 +231,7 @@ func TestCheckUpgradeEligibilityCurrentVersion(t *testing.T) {
 }
 
 func TestCheckUpgradeEligibilityBadFormat(t *testing.T) {
-	conf, cleanup := testConfig(t)
-	defer cleanup()
+	conf := testConfig(t)
 	dbPath := LedgerProviderPath(conf.RootFSPath)
 	db := leveldbhelper.CreateDB(&leveldbhelper.Conf{DBPath: dbPath})
 	idStore := &idStore{db, dbPath}
@@ -243,8 +252,7 @@ func TestCheckUpgradeEligibilityBadFormat(t *testing.T) {
 }
 
 func TestCheckUpgradeEligibilityEmptyDB(t *testing.T) {
-	conf, cleanup := testConfig(t)
-	defer cleanup()
+	conf := testConfig(t)
 	dbPath := LedgerProviderPath(conf.RootFSPath)
 	db := leveldbhelper.CreateDB(&leveldbhelper.Conf{DBPath: dbPath})
 	idStore := &idStore{db, dbPath}
@@ -287,9 +295,8 @@ func TestDeletionOfUnderConstructionLedgersAtStart(t *testing.T) {
 }
 
 func testDeletionOfUnderConstructionLedgersAtStart(t *testing.T, enableHistoryDB, mimicCrashAfterLedgerCreation bool) {
-	conf, cleanup := testConfig(t)
+	conf := testConfig(t)
 	conf.HistoryDBConfig.Enabled = enableHistoryDB
-	defer cleanup()
 	provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
 	idStore := provider.idStore
 	ledgerID := "testLedger"
@@ -330,8 +337,7 @@ func testDeletionOfUnderConstructionLedgersAtStart(t *testing.T, enableHistoryDB
 }
 
 func TestLedgerCreationFailure(t *testing.T) {
-	conf, cleanup := testConfig(t)
-	defer cleanup()
+	conf := testConfig(t)
 	provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
 	ledgerID := "testLedger"
 	defer func() {
@@ -348,8 +354,7 @@ func TestLedgerCreationFailure(t *testing.T) {
 }
 
 func TestLedgerCreationFailureDuringLedgerDeletion(t *testing.T) {
-	conf, cleanup := testConfig(t)
-	defer cleanup()
+	conf := testConfig(t)
 	provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
 	ledgerID := "testLedger"
 	defer func() {
@@ -368,8 +373,7 @@ func TestLedgerCreationFailureDuringLedgerDeletion(t *testing.T) {
 }
 
 func TestMultipleLedgerBasicRW(t *testing.T) {
-	conf, cleanup := testConfig(t)
-	defer cleanup()
+	conf := testConfig(t)
 	provider1 := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
 	defer provider1.Close()
 
@@ -417,9 +421,7 @@ func TestMultipleLedgerBasicRW(t *testing.T) {
 
 func TestLedgerBackup(t *testing.T) {
 	ledgerid := "TestLedger"
-	basePath, err := ioutil.TempDir("", "kvledger")
-	require.NoError(t, err, "Failed to create ledger directory")
-	defer os.RemoveAll(basePath)
+	basePath := t.TempDir()
 	originalPath := filepath.Join(basePath, "kvledger1")
 	restorePath := filepath.Join(basePath, "kvledger2")
 
@@ -497,7 +499,7 @@ func TestLedgerBackup(t *testing.T) {
 	provider = testutilNewProvider(restoreConf, t, &mock.DeployedChaincodeInfoProvider{})
 	defer provider.Close()
 
-	_, err = provider.CreateFromGenesisBlock(gb)
+	_, err := provider.CreateFromGenesisBlock(gb)
 	require.EqualError(t, err, "ledger [TestLedger] already exists with state [ACTIVE]")
 
 	lgr, err = provider.Open(ledgerid)
@@ -579,9 +581,8 @@ func constructTestLedger(t *testing.T, provider *Provider, sequenceID int) strin
 	return ledgerID
 }
 
-func testConfig(t *testing.T) (conf *ledger.Config, cleanup func()) {
-	path, err := ioutil.TempDir("", "kvledger")
-	require.NoError(t, err, "Failed to create test ledger directory")
+func testConfig(t *testing.T) (conf *ledger.Config) {
+	path := t.TempDir()
 	conf = &ledger.Config{
 		RootFSPath:    path,
 		StateDBConfig: &ledger.StateDBConfig{},
@@ -598,11 +599,8 @@ func testConfig(t *testing.T) (conf *ledger.Config, cleanup func()) {
 			RootDir: filepath.Join(path, "snapshots"),
 		},
 	}
-	cleanup = func() {
-		os.RemoveAll(path)
-	}
 
-	return conf, cleanup
+	return conf
 }
 
 func testutilNewProvider(conf *ledger.Config, t *testing.T, ccInfoProvider *mock.DeployedChaincodeInfoProvider) *Provider {

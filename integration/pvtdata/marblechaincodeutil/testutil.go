@@ -57,6 +57,44 @@ func DeleteMarble(n *nwo.Network, orderer *nwo.Orderer, channelID, chaincodeName
 	nwo.WaitUntilEqualLedgerHeight(n, channelID, nwo.GetLedgerHeight(n, peer, channelID), n.Peers...)
 }
 
+// PurgeMarble invokes marbles_private chaincode to purge a marble
+func PurgeMarble(n *nwo.Network, orderer *nwo.Orderer, channelID, chaincodeName, marblePurge string, peer *nwo.Peer) {
+	marblePurgeBase64 := base64.StdEncoding.EncodeToString([]byte(marblePurge))
+
+	command := commands.ChaincodeInvoke{
+		ChannelID: channelID,
+		Orderer:   n.OrdererAddress(orderer, nwo.ListenPort),
+		Name:      chaincodeName,
+		Ctor:      `{"Args":["purge"]}`,
+		Transient: fmt.Sprintf(`{"marble_purge":"%s"}`, marblePurgeBase64),
+		PeerAddresses: []string{
+			n.PeerAddress(peer, nwo.ListenPort),
+		},
+		WaitForEvent: true,
+	}
+	invokeChaincode(n, peer, command)
+	nwo.WaitUntilEqualLedgerHeight(n, channelID, nwo.GetLedgerHeight(n, peer, channelID), n.Peers...)
+}
+
+// SetMarblePolicy invokes marbles_private chaincode to update a marble's state-based endorsement policy
+func SetMarblePolicy(n *nwo.Network, orderer *nwo.Orderer, channelID, chaincodeName, marblePolicy string, peer *nwo.Peer) {
+	marblePolicyBase64 := base64.StdEncoding.EncodeToString([]byte(marblePolicy))
+
+	command := commands.ChaincodeInvoke{
+		ChannelID: channelID,
+		Orderer:   n.OrdererAddress(orderer, nwo.ListenPort),
+		Name:      chaincodeName,
+		Ctor:      `{"Args":["setStateBasedEndorsementPolicy"]}`,
+		Transient: fmt.Sprintf(`{"marble_ep":"%s"}`, marblePolicyBase64),
+		PeerAddresses: []string{
+			n.PeerAddress(peer, nwo.ListenPort),
+		},
+		WaitForEvent: true,
+	}
+	invokeChaincode(n, peer, command)
+	nwo.WaitUntilEqualLedgerHeight(n, channelID, nwo.GetLedgerHeight(n, peer, channelID), n.Peers...)
+}
+
 // TransferMarble invokes marbles_private chaincode to transfer marble's ownership
 func TransferMarble(n *nwo.Network, orderer *nwo.Orderer, channelID, chaincodeName, marbleOwner string, peer *nwo.Peer) {
 	marbleOwnerBase64 := base64.StdEncoding.EncodeToString([]byte(marbleOwner))
@@ -211,6 +249,14 @@ func AssertMarblesPrivateHashM(n *nwo.Network, channelID, chaincodeName, marbleN
 func AssertMarblesPrivateDetailsHashMPD(n *nwo.Network, channelID, chaincodeName, marbleName string, expectedBytes []byte, peerList []*nwo.Peer) {
 	query := fmt.Sprintf(`{"Args":["getMarblePrivateDetailsHash","%s"]}`, marbleName)
 	verifyPvtdataHash(n, query, channelID, chaincodeName, peerList, expectedBytes)
+}
+
+// AssertInvokeChaincodeFails asserts that a chaincode invoke fails with a specified error message
+func AssertInvokeChaincodeFails(n *nwo.Network, peer *nwo.Peer, command commands.ChaincodeInvoke, expectedMessage string) {
+	sess, err := n.PeerUserSession(peer, "User1", command)
+	Expect(err).NotTo(HaveOccurred())
+	Eventually(sess, n.EventuallyTimeout).Should(gexec.Exit())
+	Expect(sess.Err).To(gbytes.Say(expectedMessage))
 }
 
 func invokeChaincode(n *nwo.Network, peer *nwo.Peer, command commands.ChaincodeInvoke) {

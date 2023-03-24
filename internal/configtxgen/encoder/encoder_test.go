@@ -8,14 +8,16 @@ package encoder_test
 
 import (
 	"fmt"
+	"time"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/golang/protobuf/proto"
 	cb "github.com/hyperledger/fabric-protos-go/common"
 	ab "github.com/hyperledger/fabric-protos-go/orderer"
 	"github.com/hyperledger/fabric-protos-go/orderer/etcdraft"
+	"github.com/hyperledger/fabric-protos-go/orderer/smartbft"
 	"github.com/hyperledger/fabric/common/util"
 	"github.com/hyperledger/fabric/internal/configtxgen/encoder"
 	"github.com/hyperledger/fabric/internal/configtxgen/encoder/fakes"
@@ -390,19 +392,6 @@ var _ = Describe("Encoder", func() {
 			})
 		})
 
-		Context("when the consensus type is Kafka", func() {
-			BeforeEach(func() {
-				conf.OrdererType = "kafka"
-			})
-
-			It("adds the kafka brokers key", func() {
-				cg, err := encoder.NewOrdererGroup(conf)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(len(cg.Values)).To(Equal(6))
-				Expect(cg.Values["KafkaBrokers"]).NotTo(BeNil())
-			})
-		})
-
 		Context("when the consensus type is etcd/raft", func() {
 			BeforeEach(func() {
 				conf.OrdererType = "etcdraft"
@@ -440,6 +429,47 @@ var _ = Describe("Encoder", func() {
 					_, err := encoder.NewOrdererGroup(conf)
 					Expect(err).To(MatchError("cannot marshal metadata for orderer type etcdraft: cannot load client cert for consenter :0: open : no such file or directory"))
 				})
+			})
+		})
+
+		Context("when the consensus type is BFT", func() {
+			BeforeEach(func() {
+				conf.OrdererType = "BFT"
+				conf.ConsenterMapping = []*genesisconfig.Consenter{
+					{
+						ID:    1,
+						Host:  "host1",
+						Port:  1001,
+						MSPID: "MSP1",
+					},
+					{
+						ID:            2,
+						Host:          "host2",
+						Port:          1002,
+						MSPID:         "MSP2",
+						ClientTLSCert: "../../../sampleconfig/msp/admincerts/admincert.pem",
+						ServerTLSCert: "../../../sampleconfig/msp/admincerts/admincert.pem",
+						Identity:      "../../../sampleconfig/msp/admincerts/admincert.pem",
+					},
+				}
+				conf.SmartBFT = &smartbft.Options{}
+			})
+
+			It("adds the Orderers key", func() {
+				cg, err := encoder.NewOrdererGroup(conf)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(len(cg.Values)).To(Equal(6))
+				Expect(cg.Values["Orderers"]).NotTo(BeNil())
+				orderersType := &cb.Orderers{}
+				err = proto.Unmarshal(cg.Values["Orderers"].Value, orderersType)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(len(orderersType.ConsenterMapping)).To(Equal(2))
+				consenter1 := orderersType.ConsenterMapping[0]
+				Expect(consenter1.Id).To(Equal(uint32(1)))
+				Expect(consenter1.ClientTlsCert).To(BeNil())
+				consenter2 := orderersType.ConsenterMapping[1]
+				Expect(consenter2.Id).To(Equal(uint32(2)))
+				Expect(consenter2.ClientTlsCert).ToNot(BeNil())
 			})
 		})
 
@@ -1084,8 +1114,9 @@ var _ = Describe("Encoder", func() {
 				sysChannelConf = &genesisconfig.Profile{
 					Policies: CreateStandardPolicies(),
 					Orderer: &genesisconfig.Orderer{
-						OrdererType: "kafka",
-						Policies:    CreateStandardOrdererPolicies(),
+						OrdererType:  "solo",
+						BatchTimeout: time.Hour,
+						Policies:     CreateStandardOrdererPolicies(),
 					},
 					Consortiums: map[string]*genesisconfig.Consortium{
 						"SampleConsortium": {
@@ -1127,7 +1158,7 @@ var _ = Describe("Encoder", func() {
 				Expect(configUpdate.WriteSet.Groups["Application"].Groups["Org1"].Version).To(Equal(uint64(1)))
 				Expect(configUpdate.WriteSet.Groups["Application"].Groups["Org1"].Values["AnchorPeers"]).NotTo(BeNil())
 				Expect(configUpdate.WriteSet.Groups["Application"].Groups["Org2"].Version).To(Equal(uint64(0)))
-				Expect(configUpdate.WriteSet.Groups["Orderer"].Values["ConsensusType"].Version).To(Equal(uint64(1)))
+				Expect(configUpdate.WriteSet.Groups["Orderer"].Values["BatchTimeout"].Version).To(Equal(uint64(1)))
 			})
 
 			Context("when the system channel config is bad", func() {
@@ -1245,7 +1276,7 @@ var _ = Describe("Encoder", func() {
 				sysChannelGroup, err = encoder.NewChannelGroup(&genesisconfig.Profile{
 					Policies: CreateStandardPolicies(),
 					Orderer: &genesisconfig.Orderer{
-						OrdererType: "kafka",
+						OrdererType: "solo",
 						Policies:    CreateStandardOrdererPolicies(),
 					},
 					Consortiums: map[string]*genesisconfig.Consortium{

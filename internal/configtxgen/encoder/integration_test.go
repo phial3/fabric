@@ -7,8 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package encoder_test
 
 import (
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/ginkgo/extensions/table"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	cb "github.com/hyperledger/fabric-protos-go/common"
@@ -68,8 +67,5 @@ var _ = Describe("Integration", func() {
 		Entry("Sample Insecure Solo Profile", genesisconfig.SampleInsecureSoloProfile),
 		Entry("Sample Single MSP Solo Profile", genesisconfig.SampleSingleMSPSoloProfile),
 		Entry("Sample DevMode Solo Profile", genesisconfig.SampleDevModeSoloProfile),
-		Entry("Sample Insecure Kafka Profile", genesisconfig.SampleInsecureKafkaProfile),
-		Entry("Sample Single MSP Kafka Profile", genesisconfig.SampleSingleMSPKafkaProfile),
-		Entry("Sample DevMode Kafka Profile", genesisconfig.SampleDevModeKafkaProfile),
 	)
 })

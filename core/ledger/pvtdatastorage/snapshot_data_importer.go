@@ -8,10 +8,10 @@ package pvtdatastorage
 
 import (
 	"bytes"
-	"io/ioutil"
 	"math"
 	"os"
 
+	"github.com/bits-and-blooms/bitset"
 	"github.com/hyperledger/fabric/common/ledger/util"
 	"github.com/hyperledger/fabric/common/ledger/util/leveldbhelper"
 	"github.com/hyperledger/fabric/core/chaincode/implicitcollection"
@@ -20,7 +20,6 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/internal/version"
 	"github.com/hyperledger/fabric/core/ledger/pvtdatapolicy"
 	"github.com/pkg/errors"
-	"github.com/willf/bitset"
 )
 
 var (
@@ -395,7 +394,7 @@ type snapshotRowsSorter struct {
 }
 
 func newSnapshotRowsSorter(tempDirRoot string) (*snapshotRowsSorter, error) {
-	tempDir, err := ioutil.TempDir(tempDirRoot, "pvtdatastore-snapshotdatainporter-")
+	tempDir, err := os.MkdirTemp(tempDirRoot, "pvtdatastore-snapshotdatainporter-")
 	if err != nil {
 		return nil, errors.Wrap(err, "error while creating temp dir for sorting rows")
 	}

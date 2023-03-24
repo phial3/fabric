@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"syscall"
 	"testing"
 	"time"
 
@@ -24,11 +23,10 @@ import (
 	"github.com/hyperledger/fabric/integration/nwo/commands"
 	"github.com/hyperledger/fabric/integration/nwo/template"
 	"github.com/hyperledger/fabric/protoutil"
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gbytes"
 	"github.com/onsi/gomega/gexec"
-	"github.com/tedsuo/ifrit"
 )
 
 func TestLifecycle(t *testing.T) {
@@ -108,15 +106,6 @@ func RunQueryInvokeQuery(n *nwo.Network, orderer *nwo.Orderer, chaincodeName str
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	EventuallyWithOffset(1, sess, n.EventuallyTimeout).Should(gexec.Exit(0))
 	ExpectWithOffset(1, sess).To(gbytes.Say(fmt.Sprint(initialQueryResult - 10)))
-}
-
-func RestartNetwork(process ifrit.Process, network *nwo.Network) ifrit.Process {
-	process.Signal(syscall.SIGTERM)
-	Eventually(process.Wait(), network.EventuallyTimeout).Should(Receive())
-	networkRunner := network.NetworkGroupRunner()
-	process = ifrit.Invoke(networkRunner)
-	Eventually(process.Ready(), network.EventuallyTimeout).Should(BeClosed())
-	return process
 }
 
 func SignedProposal(channel, chaincode string, signer *nwo.SigningIdentity, args ...string) (*pb.SignedProposal, *pb.Proposal, string) {

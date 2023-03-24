@@ -494,7 +494,7 @@ func TestValidateDeployFail(t *testing.T) {
 
 	b = &common.Block{Data: &common.BlockData{Data: [][]byte{envBytes}}, Header: &common.BlockHeader{}}
 	err = v.Validate(b, "lscc", 0, 0, policy)
-	require.EqualError(t, err, "unmarhsalling of ChaincodeData failed, error unexpected EOF")
+	require.ErrorContains(t, err, "unmarshalling of ChaincodeData failed")
 
 	/**********************/
 	/* test bad LSCC args */
@@ -548,7 +548,7 @@ func TestValidateDeployFail(t *testing.T) {
 
 	b = &common.Block{Data: &common.BlockData{Data: [][]byte{envBytes}}, Header: &common.BlockHeader{}}
 	err = v.Validate(b, "lscc", 0, 0, policy)
-	require.EqualError(t, err, "GetChaincodeDeploymentSpec error error unmarshalling ChaincodeDeploymentSpec: unexpected EOF")
+	require.ErrorContains(t, err, "GetChaincodeDeploymentSpec error error unmarshalling ChaincodeDeploymentSpec")
 
 	/***********************/
 	/* test bad cc version */
@@ -599,7 +599,7 @@ func TestValidateDeployFail(t *testing.T) {
 
 	b = &common.Block{Data: &common.BlockData{Data: [][]byte{envBytes}}, Header: &common.BlockHeader{}}
 	err = v.Validate(b, "lscc", 0, 0, policy)
-	require.EqualError(t, err, "txRWSet.FromProtoBytes error unexpected EOF")
+	require.ErrorContains(t, err, "txRWSet.FromProtoBytes error")
 
 	/********************/
 	/* test bad cc name */
@@ -1404,7 +1404,7 @@ func validateUpgradeWithCollection(t *testing.T, V1_2Validation bool) {
 
 		ccver = "3"
 
-		// Test 4: valid collection config config and peer in V1_2Validation mode --> success
+		// Test 4: valid collection config and peer in V1_2Validation mode --> success
 		ccp = &peer.CollectionConfigPackage{Config: []*peer.CollectionConfig{coll1, coll2, coll3}}
 		ccpBytes, err = proto.Marshal(ccp)
 		require.NoError(t, err)

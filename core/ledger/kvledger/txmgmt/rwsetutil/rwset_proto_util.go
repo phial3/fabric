@@ -286,7 +286,7 @@ func (nsPvtRwSet *NsPvtRwSet) toProtoMsg() (*rwset.NsPvtReadWriteSet, error) {
 	var err error
 	var collPvtRwSetProtoMsg *rwset.CollectionPvtReadWriteSet
 	for _, collPvtRwSet := range nsPvtRwSet.CollPvtRwSets {
-		if collPvtRwSetProtoMsg, err = collPvtRwSet.toProtoMsg(); err != nil {
+		if collPvtRwSetProtoMsg, err = collPvtRwSet.ToProtoMsg(); err != nil {
 			return nil, err
 		}
 		protoMsg.CollectionPvtRwset = append(protoMsg.CollectionPvtRwset, collPvtRwSetProtoMsg)
@@ -299,7 +299,7 @@ func nsPvtRwSetFromProtoMsg(protoMsg *rwset.NsPvtReadWriteSet) (*NsPvtRwSet, err
 	for _, collPvtRwSetProtoMsg := range protoMsg.CollectionPvtRwset {
 		var err error
 		var collPvtRwSet *CollPvtRwSet
-		if collPvtRwSet, err = collPvtRwSetFromProtoMsg(collPvtRwSetProtoMsg); err != nil {
+		if collPvtRwSet, err = CollPvtRwSetFromProtoMsg(collPvtRwSetProtoMsg); err != nil {
 			return nil, err
 		}
 		nsPvtRwSet.CollPvtRwSets = append(nsPvtRwSet.CollPvtRwSets, collPvtRwSet)
@@ -307,7 +307,7 @@ func nsPvtRwSetFromProtoMsg(protoMsg *rwset.NsPvtReadWriteSet) (*NsPvtRwSet, err
 	return nsPvtRwSet, nil
 }
 
-func (collPvtRwSet *CollPvtRwSet) toProtoMsg() (*rwset.CollectionPvtReadWriteSet, error) {
+func (collPvtRwSet *CollPvtRwSet) ToProtoMsg() (*rwset.CollectionPvtReadWriteSet, error) {
 	var err error
 	protoMsg := &rwset.CollectionPvtReadWriteSet{CollectionName: collPvtRwSet.CollectionName}
 	if protoMsg.Rwset, err = proto.Marshal(collPvtRwSet.KvRwSet); err != nil {
@@ -316,7 +316,7 @@ func (collPvtRwSet *CollPvtRwSet) toProtoMsg() (*rwset.CollectionPvtReadWriteSet
 	return protoMsg, nil
 }
 
-func collPvtRwSetFromProtoMsg(protoMsg *rwset.CollectionPvtReadWriteSet) (*CollPvtRwSet, error) {
+func CollPvtRwSetFromProtoMsg(protoMsg *rwset.CollectionPvtReadWriteSet) (*CollPvtRwSet, error) {
 	collPvtRwSet := &CollPvtRwSet{CollectionName: protoMsg.CollectionName, KvRwSet: &kvrwset.KVRWSet{}}
 	if err := proto.Unmarshal(protoMsg.Rwset, collPvtRwSet.KvRwSet); err != nil {
 		return nil, err

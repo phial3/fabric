@@ -61,6 +61,16 @@ The following orderer metrics are exported for consumption by Prometheus.
 |                                              |           |                                                            +-----------+--------------------------------------------------------------------+
 |                                              |           |                                                            | channel   |                                                                    |
 +----------------------------------------------+-----------+------------------------------------------------------------+-----------+--------------------------------------------------------------------+
+| consensus_BFT_cluster_size                   | gauge     | Number of nodes in this channel.                           | channel   |                                                                    |
++----------------------------------------------+-----------+------------------------------------------------------------+-----------+--------------------------------------------------------------------+
+| consensus_BFT_committed_block_number         | gauge     | The number of the latest committed block.                  | channel   |                                                                    |
++----------------------------------------------+-----------+------------------------------------------------------------+-----------+--------------------------------------------------------------------+
+| consensus_BFT_is_leader                      | gauge     | The leadership status of the current node according to the | channel   |                                                                    |
+|                                              |           | latest committed block: 1 if it is the leader else 0.      |           |                                                                    |
++----------------------------------------------+-----------+------------------------------------------------------------+-----------+--------------------------------------------------------------------+
+| consensus_BFT_leader_id                      | gauge     | The id of the current leader according to the latest       | channel   |                                                                    |
+|                                              |           | committed block.                                           |           |                                                                    |
++----------------------------------------------+-----------+------------------------------------------------------------+-----------+--------------------------------------------------------------------+
 | consensus_etcdraft_active_nodes              | gauge     | Number of active nodes in this channel.                    | channel   |                                                                    |
 +----------------------------------------------+-----------+------------------------------------------------------------+-----------+--------------------------------------------------------------------+
 | consensus_etcdraft_cluster_size              | gauge     | Number of nodes in this channel.                           | channel   |                                                                    |
@@ -84,31 +94,6 @@ The following orderer metrics are exported for consumption by Prometheus.
 | consensus_etcdraft_proposal_failures         | counter   | The number of proposal failures.                           | channel   |                                                                    |
 +----------------------------------------------+-----------+------------------------------------------------------------+-----------+--------------------------------------------------------------------+
 | consensus_etcdraft_snapshot_block_number     | gauge     | The block number of the latest snapshot.                   | channel   |                                                                    |
-+----------------------------------------------+-----------+------------------------------------------------------------+-----------+--------------------------------------------------------------------+
-| consensus_kafka_batch_size                   | gauge     | The mean batch size in bytes sent to topics.               | topic     |                                                                    |
-+----------------------------------------------+-----------+------------------------------------------------------------+-----------+--------------------------------------------------------------------+
-| consensus_kafka_compression_ratio            | gauge     | The mean compression ratio (as percentage) for topics.     | topic     |                                                                    |
-+----------------------------------------------+-----------+------------------------------------------------------------+-----------+--------------------------------------------------------------------+
-| consensus_kafka_incoming_byte_rate           | gauge     | Bytes/second read off brokers.                             | broker_id |                                                                    |
-+----------------------------------------------+-----------+------------------------------------------------------------+-----------+--------------------------------------------------------------------+
-| consensus_kafka_last_offset_persisted        | gauge     | The offset specified in the block metadata of the most     | channel   |                                                                    |
-|                                              |           | recently committed block.                                  |           |                                                                    |
-+----------------------------------------------+-----------+------------------------------------------------------------+-----------+--------------------------------------------------------------------+
-| consensus_kafka_outgoing_byte_rate           | gauge     | Bytes/second written to brokers.                           | broker_id |                                                                    |
-+----------------------------------------------+-----------+------------------------------------------------------------+-----------+--------------------------------------------------------------------+
-| consensus_kafka_record_send_rate             | gauge     | The number of records per second sent to topics.           | topic     |                                                                    |
-+----------------------------------------------+-----------+------------------------------------------------------------+-----------+--------------------------------------------------------------------+
-| consensus_kafka_records_per_request          | gauge     | The mean number of records sent per request to topics.     | topic     |                                                                    |
-+----------------------------------------------+-----------+------------------------------------------------------------+-----------+--------------------------------------------------------------------+
-| consensus_kafka_request_latency              | gauge     | The mean request latency in ms to brokers.                 | broker_id |                                                                    |
-+----------------------------------------------+-----------+------------------------------------------------------------+-----------+--------------------------------------------------------------------+
-| consensus_kafka_request_rate                 | gauge     | Requests/second sent to brokers.                           | broker_id |                                                                    |
-+----------------------------------------------+-----------+------------------------------------------------------------+-----------+--------------------------------------------------------------------+
-| consensus_kafka_request_size                 | gauge     | The mean request size in bytes to brokers.                 | broker_id |                                                                    |
-+----------------------------------------------+-----------+------------------------------------------------------------+-----------+--------------------------------------------------------------------+
-| consensus_kafka_response_rate                | gauge     | Requests/second sent to brokers.                           | broker_id |                                                                    |
-+----------------------------------------------+-----------+------------------------------------------------------------+-----------+--------------------------------------------------------------------+
-| consensus_kafka_response_size                | gauge     | The mean response size in bytes from brokers.              | broker_id |                                                                    |
 +----------------------------------------------+-----------+------------------------------------------------------------+-----------+--------------------------------------------------------------------+
 | deliver_blocks_sent                          | counter   | The number of blocks sent by the deliver service.          | channel   |                                                                    |
 |                                              |           |                                                            +-----------+--------------------------------------------------------------------+
@@ -239,6 +224,16 @@ associated with the metric.
 +---------------------------------------------------------------------------+-----------+------------------------------------------------------------+
 | cluster.comm.msg_send_time.%{host}.%{channel}                             | histogram | The time it takes to send a message in seconds.            |
 +---------------------------------------------------------------------------+-----------+------------------------------------------------------------+
+| consensus.BFT.cluster_size.%{channel}                                     | gauge     | Number of nodes in this channel.                           |
++---------------------------------------------------------------------------+-----------+------------------------------------------------------------+
+| consensus.BFT.committed_block_number.%{channel}                           | gauge     | The number of the latest committed block.                  |
++---------------------------------------------------------------------------+-----------+------------------------------------------------------------+
+| consensus.BFT.is_leader.%{channel}                                        | gauge     | The leadership status of the current node according to the |
+|                                                                           |           | latest committed block: 1 if it is the leader else 0.      |
++---------------------------------------------------------------------------+-----------+------------------------------------------------------------+
+| consensus.BFT.leader_id.%{channel}                                        | gauge     | The id of the current leader according to the latest       |
+|                                                                           |           | committed block.                                           |
++---------------------------------------------------------------------------+-----------+------------------------------------------------------------+
 | consensus.etcdraft.active_nodes.%{channel}                                | gauge     | Number of active nodes in this channel.                    |
 +---------------------------------------------------------------------------+-----------+------------------------------------------------------------+
 | consensus.etcdraft.cluster_size.%{channel}                                | gauge     | Number of nodes in this channel.                           |
@@ -262,31 +257,6 @@ associated with the metric.
 | consensus.etcdraft.proposal_failures.%{channel}                           | counter   | The number of proposal failures.                           |
 +---------------------------------------------------------------------------+-----------+------------------------------------------------------------+
 | consensus.etcdraft.snapshot_block_number.%{channel}                       | gauge     | The block number of the latest snapshot.                   |
-+---------------------------------------------------------------------------+-----------+------------------------------------------------------------+
-| consensus.kafka.batch_size.%{topic}                                       | gauge     | The mean batch size in bytes sent to topics.               |
-+---------------------------------------------------------------------------+-----------+------------------------------------------------------------+
-| consensus.kafka.compression_ratio.%{topic}                                | gauge     | The mean compression ratio (as percentage) for topics.     |
-+---------------------------------------------------------------------------+-----------+------------------------------------------------------------+
-| consensus.kafka.incoming_byte_rate.%{broker_id}                           | gauge     | Bytes/second read off brokers.                             |
-+---------------------------------------------------------------------------+-----------+------------------------------------------------------------+
-| consensus.kafka.last_offset_persisted.%{channel}                          | gauge     | The offset specified in the block metadata of the most     |
-|                                                                           |           | recently committed block.                                  |
-+---------------------------------------------------------------------------+-----------+------------------------------------------------------------+
-| consensus.kafka.outgoing_byte_rate.%{broker_id}                           | gauge     | Bytes/second written to brokers.                           |
-+---------------------------------------------------------------------------+-----------+------------------------------------------------------------+
-| consensus.kafka.record_send_rate.%{topic}                                 | gauge     | The number of records per second sent to topics.           |
-+---------------------------------------------------------------------------+-----------+------------------------------------------------------------+
-| consensus.kafka.records_per_request.%{topic}                              | gauge     | The mean number of records sent per request to topics.     |
-+---------------------------------------------------------------------------+-----------+------------------------------------------------------------+
-| consensus.kafka.request_latency.%{broker_id}                              | gauge     | The mean request latency in ms to brokers.                 |
-+---------------------------------------------------------------------------+-----------+------------------------------------------------------------+
-| consensus.kafka.request_rate.%{broker_id}                                 | gauge     | Requests/second sent to brokers.                           |
-+---------------------------------------------------------------------------+-----------+------------------------------------------------------------+
-| consensus.kafka.request_size.%{broker_id}                                 | gauge     | The mean request size in bytes to brokers.                 |
-+---------------------------------------------------------------------------+-----------+------------------------------------------------------------+
-| consensus.kafka.response_rate.%{broker_id}                                | gauge     | Requests/second sent to brokers.                           |
-+---------------------------------------------------------------------------+-----------+------------------------------------------------------------+
-| consensus.kafka.response_size.%{broker_id}                                | gauge     | The mean response size in bytes from brokers.              |
 +---------------------------------------------------------------------------+-----------+------------------------------------------------------------+
 | deliver.blocks_sent.%{channel}.%{filtered}.%{data_type}                   | counter   | The number of blocks sent by the deliver service.          |
 +---------------------------------------------------------------------------+-----------+------------------------------------------------------------+

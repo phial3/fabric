@@ -7,7 +7,6 @@ SPDX-License-Identifier: Apache-2.0
 package etcdraft
 
 import (
-	"bytes"
 	"path"
 	"reflect"
 	"time"
@@ -31,7 +30,7 @@ import (
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/mitchellh/mapstructure"
 	"github.com/pkg/errors"
-	"go.etcd.io/etcd/raft"
+	"go.etcd.io/etcd/raft/v3"
 )
 
 //go:generate counterfeiter -o mocks/inactive_chain_registry.go --fake-name InactiveChainRegistry . InactiveChainRegistry
@@ -291,15 +290,19 @@ func (c *Consenter) IsChannelMember(joinBlock *common.Block) (bool, error) {
 		return false, errors.Wrapf(err, "failed to validate config metadata of ordering config")
 	}
 
-	member := false
-	for _, consenter := range configMetadata.Consenters {
-		if bytes.Equal(c.Cert, consenter.ServerTlsCert) || bytes.Equal(c.Cert, consenter.ClientTlsCert) {
-			member = true
-			break
-		}
+	consenters := make(map[uint64]*etcdraft.Consenter)
+	for i, c := range configMetadata.Consenters {
+		consenters[uint64(i+1)] = c // the IDs don't matter
 	}
 
-	return member, nil
+	if _, err := c.detectSelfID(consenters); err != nil {
+		if err != cluster.ErrNotInChannel {
+			return false, errors.Wrapf(err, "failed to detect self ID by comparing public keys")
+		}
+		return false, nil
+	}
+
+	return true, nil
 }
 
 // RemoveInactiveChainRegistry stops and removes the inactive chain registry.
@@ -343,7 +346,7 @@ func New(
 	srvConf comm.ServerConfig,
 	srv *comm.GRPCServer,
 	registrar ChainManager,
-	icr InactiveChainRegistry,
+	icr InactiveChainRegistry, // TODO remove
 	metricsProvider metrics.Provider,
 	bccsp bccsp.BCCSP,
 ) *Consenter {

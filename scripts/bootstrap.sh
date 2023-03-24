@@ -6,11 +6,20 @@
 #
 
 # if version not passed in, default to latest released version
-VERSION=2.4.5
+VERSION=2.4.9
 # if ca version not passed in, default to latest released version
-CA_VERSION=1.5.3
-ARCH=$(echo "$(uname -s|tr '[:upper:]' '[:lower:]'|sed 's/mingw64_nt.*/windows/')-$(uname -m | sed 's/x86_64/amd64/g')")
+CA_VERSION=1.5.5
+
+REGISTRY=${FABRIC_DOCKER_REGISTRY:-docker.io/hyperledger}
+
+OS=$(uname -s|tr '[:upper:]' '[:lower:]'|sed 's/mingw64_nt.*/windows/')
+ARCH=$(uname -m | sed 's/x86_64/amd64/g' | sed 's/aarch64/arm64/g')
+PLATFORM=${OS}-${ARCH}
+
+# Fabric < 1.2 uses uname -m for architecture.
 MARCH=$(uname -m)
+
+: ${CONTAINER_CLI:="docker"}
 
 printHelp() {
     echo "Usage: bootstrap.sh [version [ca_version]] [options]"
@@ -21,8 +30,8 @@ printHelp() {
     echo "-s : bypass fabric-samples repo clone"
     echo "-b : bypass download of platform-specific binaries"
     echo
-    echo "e.g. bootstrap.sh 2.4.5 1.5.3 -s"
-    echo "will download docker images and binaries for Fabric v2.4.5 and Fabric CA v1.5.3"
+    echo "e.g. bootstrap.sh 2.4.9 1.5.5 -s"
+    echo "will download docker images and binaries for Fabric v2.4.9 and Fabric CA v1.5.5"
 }
 
 # dockerPull() pulls docker images from fabric and chaincode repositories
@@ -38,10 +47,10 @@ dockerPull() {
     while [[ $# -gt 0 ]]
     do
         image_name="$1"
-        echo "====> hyperledger/fabric-$image_name:$three_digit_image_tag"
-        docker pull "hyperledger/fabric-$image_name:$three_digit_image_tag"
-        docker tag "hyperledger/fabric-$image_name:$three_digit_image_tag" "hyperledger/fabric-$image_name"
-        docker tag "hyperledger/fabric-$image_name:$three_digit_image_tag" "hyperledger/fabric-$image_name:$two_digit_image_tag"
+        echo "====>  ${REGISTRY}/fabric-$image_name:$three_digit_image_tag"
+        ${CONTAINER_CLI} pull "${REGISTRY}/fabric-$image_name:$three_digit_image_tag"
+        ${CONTAINER_CLI} tag "${REGISTRY}/fabric-$image_name:$three_digit_image_tag" "${REGISTRY}/fabric-$image_name"
+        ${CONTAINER_CLI} tag "${REGISTRY}/fabric-$image_name:$three_digit_image_tag" "${REGISTRY}/fabric-$image_name:$two_digit_image_tag"
         shift
     done
 }
@@ -106,7 +115,7 @@ pullBinaries() {
 }
 
 pullDockerImages() {
-    command -v docker >& /dev/null
+    command -v ${CONTAINER_CLI} >& /dev/null
     NODOCKER=$?
     if [ "${NODOCKER}" == 0 ]; then
         FABRIC_IMAGES=(peer orderer ccenv tools)
@@ -123,10 +132,10 @@ pullDockerImages() {
         CA_IMAGE=(ca)
         dockerPull "${CA_TAG}" "${CA_IMAGE[@]}"
         echo "===> List out hyperledger docker images"
-        docker images | grep hyperledger
+        ${CONTAINER_CLI} images | grep hyperledger
     else
         echo "========================================================="
-        echo "Docker not installed, bypassing download of Fabric images"
+        echo "${CONTAINER_CLI} not installed, bypassing download of Fabric images"
         echo "========================================================="
     fi
 }
@@ -159,8 +168,13 @@ else
     : "${THIRDPARTY_TAG:="$THIRDPARTY_IMAGE_VERSION"}"
 fi
 
-BINARY_FILE=hyperledger-fabric-${ARCH}-${VERSION}.tar.gz
-CA_BINARY_FILE=hyperledger-fabric-ca-${ARCH}-${CA_VERSION}.tar.gz
+# Prior to fabric 2.5, use amd64 binaries on darwin-arm64
+if [[ $VERSION =~ ^2\.[0-4]\.* ]]; then
+  PLATFORM=$(echo $PLATFORM | sed 's/darwin-arm64/darwin-amd64/g')
+fi
+
+BINARY_FILE=hyperledger-fabric-${PLATFORM}-${VERSION}.tar.gz
+CA_BINARY_FILE=hyperledger-fabric-ca-${PLATFORM}-${CA_VERSION}.tar.gz
 
 # then parse opts
 while getopts "h?dsb" opt; do

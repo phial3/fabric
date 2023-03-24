@@ -5,7 +5,6 @@ package localconfig
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -34,18 +33,18 @@ func TestMissingConfigValueOverridden(t *testing.T) {
 		cfg, err := cc.load()
 		require.NotNil(t, cfg, "Could not load config")
 		require.NoError(t, err, "Load good config returned unexpected error")
-		require.Nil(t, cfg.Kafka.TLS.ClientRootCAs)
+		require.Nil(t, cfg.General.TLS.ClientRootCAs)
 	})
 
 	t.Run("when the value is missing and is overridden", func(t *testing.T) {
-		os.Setenv("ORDERER_KAFKA_TLS_CLIENTROOTCAS", "msp/tlscacerts/tlsroot.pem")
+		os.Setenv("ORDERER_GENERAL_TLS_CLIENTROOTCAS", "msp/tlscacerts/tlsroot.pem")
 		cleanup := configtest.SetDevFabricConfigPath(t)
 		defer cleanup()
 		cache := &configCache{}
 		cfg, err := cache.load()
 		require.NotNil(t, cfg, "Could not load config")
 		require.NoError(t, err, "Load good config returned unexpected error")
-		require.NotNil(t, cfg.Kafka.TLS.ClientRootCAs)
+		require.NotNil(t, cfg.Admin.TLS.ClientRootCAs)
 	})
 }
 
@@ -57,7 +56,7 @@ func TestLoadCached(t *testing.T) {
 	// With the caching behavior, the update should not be reflected
 	initial, err := Load()
 	require.NoError(t, err)
-	os.Setenv("ORDERER_KAFKA_RETRY_SHORTINTERVAL", "120s")
+	os.Setenv("ORDERER_GENERAL_KEEPALIVE_SERVERTIMEOUT", "120s")
 	updated, err := Load()
 	require.NoError(t, err)
 	require.Equal(t, initial, updated, "expected %#v to equal %#v", updated, initial)
@@ -83,12 +82,7 @@ func TestLoadMissingConfigFile(t *testing.T) {
 }
 
 func TestLoadMalformedConfigFile(t *testing.T) {
-	name, err := ioutil.TempDir("", "hyperledger_fabric")
-	require.Nil(t, err, "Error creating temp dir: %s", err)
-	defer func() {
-		err = os.RemoveAll(name)
-		require.Nil(t, os.RemoveAll(name), "Error removing temp dir: %s", err)
-	}()
+	name := t.TempDir()
 
 	// Create a malformed orderer.yaml file in temp dir
 	f, err := os.OpenFile(filepath.Join(name, "orderer.yaml"), os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
@@ -114,7 +108,7 @@ func TestLoadMalformedConfigFile(t *testing.T) {
 func TestEnvInnerVar(t *testing.T) {
 	envVar1 := "ORDERER_GENERAL_LISTENPORT"
 	envVal1 := uint16(80)
-	envVar2 := "ORDERER_KAFKA_RETRY_SHORTINTERVAL"
+	envVar2 := "ORDERER_GENERAL_KEEPALIVE_SERVERTIMEOUT"
 	envVal2 := "42s"
 	os.Setenv(envVar1, fmt.Sprintf("%d", envVal1))
 	os.Setenv(envVar2, envVal2)
@@ -131,54 +125,7 @@ func TestEnvInnerVar(t *testing.T) {
 	require.Equal(t, config.General.ListenPort, envVal1, "Environmental override of inner config test 1 did not work")
 
 	v2, _ := time.ParseDuration(envVal2)
-	require.Equal(t, config.Kafka.Retry.ShortInterval, v2, "Environmental override of inner config test 2 did not work")
-}
-
-func TestKafkaTLSConfig(t *testing.T) {
-	testCases := []struct {
-		name        string
-		tls         TLS
-		shouldPanic bool
-	}{
-		{"Disabled", TLS{Enabled: false}, false},
-		{"EnabledNoPrivateKey", TLS{Enabled: true, Certificate: "public.key"}, true},
-		{"EnabledNoPublicKey", TLS{Enabled: true, PrivateKey: "private.key"}, true},
-		{"EnabledNoTrustedRoots", TLS{Enabled: true, PrivateKey: "private.key", Certificate: "public.key"}, true},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			uconf := &TopLevel{Kafka: Kafka{TLS: tc.tls}}
-			if tc.shouldPanic {
-				require.Panics(t, func() { uconf.completeInitialization("/dummy/path") }, "Should panic")
-			} else {
-				require.NotPanics(t, func() { uconf.completeInitialization("/dummy/path") }, "Should not panic")
-			}
-		})
-	}
-}
-
-func TestKafkaSASLPlain(t *testing.T) {
-	testCases := []struct {
-		name        string
-		sasl        SASLPlain
-		shouldPanic bool
-	}{
-		{"Disabled", SASLPlain{Enabled: false}, false},
-		{"EnabledUserPassword", SASLPlain{Enabled: true, User: "user", Password: "pwd"}, false},
-		{"EnabledNoUserPassword", SASLPlain{Enabled: true}, true},
-		{"EnabledNoUser", SASLPlain{Enabled: true, Password: "pwd"}, true},
-		{"EnabledNoPassword", SASLPlain{Enabled: true, User: "user"}, true},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			uconf := &TopLevel{Kafka: Kafka{SASLPlain: tc.sasl}}
-			if tc.shouldPanic {
-				require.Panics(t, func() { uconf.completeInitialization("/dummy/path") }, "Should panic")
-			} else {
-				require.NotPanics(t, func() { uconf.completeInitialization("/dummy/path") }, "Should not panic")
-			}
-		})
-	}
+	require.Equal(t, config.General.Keepalive.ServerTimeout, v2, "Environmental override of inner config test 2 did not work")
 }
 
 func TestAdminTLSConfig(t *testing.T) {
@@ -235,12 +182,7 @@ func TestClusterDefaults(t *testing.T) {
 }
 
 func TestConsensusConfig(t *testing.T) {
-	name, err := ioutil.TempDir("", "hyperledger_fabric")
-	require.Nil(t, err, "Error creating temp dir: %s", err)
-	defer func() {
-		err = os.RemoveAll(name)
-		require.Nil(t, os.RemoveAll(name), "Error removing temp dir: %s", err)
-	}()
+	name := t.TempDir()
 
 	content := `---
 Consensus:

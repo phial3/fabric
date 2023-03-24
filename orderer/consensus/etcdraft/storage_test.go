@@ -7,7 +7,6 @@ SPDX-License-Identifier: Apache-2.0
 package etcdraft
 
 import (
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -17,10 +16,10 @@ import (
 
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/stretchr/testify/require"
-	"go.etcd.io/etcd/pkg/fileutil"
-	"go.etcd.io/etcd/raft"
-	"go.etcd.io/etcd/raft/raftpb"
-	"go.etcd.io/etcd/wal"
+	"go.etcd.io/etcd/client/pkg/v3/fileutil"
+	raft "go.etcd.io/etcd/raft/v3"
+	"go.etcd.io/etcd/raft/v3/raftpb"
+	"go.etcd.io/etcd/server/v3/wal"
 	"go.uber.org/zap"
 )
 
@@ -37,8 +36,7 @@ var (
 func setup(t *testing.T) {
 	logger = flogging.NewFabricLogger(zap.NewExample())
 	ram = raft.NewMemoryStorage()
-	dataDir, err = ioutil.TempDir("", "etcdraft-")
-	require.NoError(t, err)
+	dataDir = t.TempDir()
 	walDir, snapDir = path.Join(dataDir, "wal"), path.Join(dataDir, "snapshot")
 	store, err = CreateStorage(logger, walDir, snapDir, ram)
 	require.NoError(t, err)
@@ -46,8 +44,6 @@ func setup(t *testing.T) {
 
 func clean(t *testing.T) {
 	err = store.Close()
-	require.NoError(t, err)
-	err = os.RemoveAll(dataDir)
 	require.NoError(t, err)
 }
 
@@ -161,13 +157,13 @@ func TestTakeSnapshot(t *testing.T) {
 
 			assertFileCount(t, 11, 0)
 
-			err = store.TakeSnapshot(uint64(3), raftpb.ConfState{Nodes: []uint64{1}}, make([]byte, 10))
+			err = store.TakeSnapshot(uint64(3), raftpb.ConfState{Voters: []uint64{1}}, make([]byte, 10))
 			require.NoError(t, err)
 			// Snapshot is taken at index 3, which releases lock up to 2 (excl.).
 			// This results in wal files with index [0, 1] being purged (2 files)
 			assertFileCount(t, 9, 1)
 
-			err = store.TakeSnapshot(uint64(5), raftpb.ConfState{Nodes: []uint64{1}}, make([]byte, 10))
+			err = store.TakeSnapshot(uint64(5), raftpb.ConfState{Voters: []uint64{1}}, make([]byte, 10))
 			require.NoError(t, err)
 			// Snapshot is taken at index 5, which releases lock up to 4 (excl.).
 			// This results in wal files with index [2, 3] being purged (2 files)
@@ -181,13 +177,13 @@ func TestTakeSnapshot(t *testing.T) {
 			store, err = CreateStorage(logger, walDir, snapDir, ram)
 			require.NoError(t, err)
 
-			err = store.TakeSnapshot(uint64(7), raftpb.ConfState{Nodes: []uint64{1}}, make([]byte, 10))
+			err = store.TakeSnapshot(uint64(7), raftpb.ConfState{Voters: []uint64{1}}, make([]byte, 10))
 			require.NoError(t, err)
 			// Snapshot is taken at index 7, which releases lock up to 6 (excl.).
 			// This results in wal files with index [4, 5] being purged (2 file)
 			assertFileCount(t, 5, 1)
 
-			err = store.TakeSnapshot(uint64(9), raftpb.ConfState{Nodes: []uint64{1}}, make([]byte, 10))
+			err = store.TakeSnapshot(uint64(9), raftpb.ConfState{Voters: []uint64{1}}, make([]byte, 10))
 			require.NoError(t, err)
 			// Snapshot is taken at index 9, which releases lock up to 8 (excl.).
 			// This results in wal files with index [6, 7] being purged (2 file)
@@ -223,13 +219,13 @@ func TestTakeSnapshot(t *testing.T) {
 			assertFileCount(t, 11, 0)
 
 			// Only one snapshot is taken, no wal pruning happened
-			err = store.TakeSnapshot(uint64(3), raftpb.ConfState{Nodes: []uint64{1}}, make([]byte, 10))
+			err = store.TakeSnapshot(uint64(3), raftpb.ConfState{Voters: []uint64{1}}, make([]byte, 10))
 			require.NoError(t, err)
 			assertFileCount(t, 11, 1)
 
 			// Two snapshots at index 3, 5. And we keep one extra wal file prior to oldest snapshot.
 			// So we should have pruned wal file with index [0, 1]
-			err = store.TakeSnapshot(uint64(5), raftpb.ConfState{Nodes: []uint64{1}}, make([]byte, 10))
+			err = store.TakeSnapshot(uint64(5), raftpb.ConfState{Voters: []uint64{1}}, make([]byte, 10))
 			require.NoError(t, err)
 			assertFileCount(t, 9, 2)
 
@@ -243,13 +239,13 @@ func TestTakeSnapshot(t *testing.T) {
 
 			// Two snapshots at index 5, 7. And we keep one extra wal file prior to oldest snapshot.
 			// So we should have pruned wal file with index [2, 3]
-			err = store.TakeSnapshot(uint64(7), raftpb.ConfState{Nodes: []uint64{1}}, make([]byte, 10))
+			err = store.TakeSnapshot(uint64(7), raftpb.ConfState{Voters: []uint64{1}}, make([]byte, 10))
 			require.NoError(t, err)
 			assertFileCount(t, 7, 2)
 
 			// Two snapshots at index 7, 9. And we keep one extra wal file prior to oldest snapshot.
 			// So we should have pruned wal file with index [4, 5]
-			err = store.TakeSnapshot(uint64(9), raftpb.ConfState{Nodes: []uint64{1}}, make([]byte, 10))
+			err = store.TakeSnapshot(uint64(9), raftpb.ConfState{Voters: []uint64{1}}, make([]byte, 10))
 			require.NoError(t, err)
 			assertFileCount(t, 5, 2)
 		})
@@ -288,13 +284,13 @@ func TestTakeSnapshot(t *testing.T) {
 			assertFileCount(t, 11, 0)
 
 			// Only one snapshot is taken, no wal pruning happened
-			err = store.TakeSnapshot(uint64(3), raftpb.ConfState{Nodes: []uint64{1}}, make([]byte, 10))
+			err = store.TakeSnapshot(uint64(3), raftpb.ConfState{Voters: []uint64{1}}, make([]byte, 10))
 			require.NoError(t, err)
 			assertFileCount(t, 11, 1)
 
 			// Two snapshots at index 3, 5. And we keep one extra wal file prior to oldest snapshot.
 			// So we should have pruned wal file with index [0, 1]
-			err = store.TakeSnapshot(uint64(5), raftpb.ConfState{Nodes: []uint64{1}}, make([]byte, 10))
+			err = store.TakeSnapshot(uint64(5), raftpb.ConfState{Voters: []uint64{1}}, make([]byte, 10))
 			require.NoError(t, err)
 			assertFileCount(t, 9, 2)
 
@@ -338,11 +334,11 @@ func TestTakeSnapshot(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, 1, fileCount(files, ".broken"))
 
-			err = store.TakeSnapshot(uint64(7), raftpb.ConfState{Nodes: []uint64{1}}, make([]byte, 10))
+			err = store.TakeSnapshot(uint64(7), raftpb.ConfState{Voters: []uint64{1}}, make([]byte, 10))
 			require.NoError(t, err)
 			assertFileCount(t, 9, 2)
 
-			err = store.TakeSnapshot(uint64(9), raftpb.ConfState{Nodes: []uint64{1}}, make([]byte, 10))
+			err = store.TakeSnapshot(uint64(9), raftpb.ConfState{Voters: []uint64{1}}, make([]byte, 10))
 			require.NoError(t, err)
 			assertFileCount(t, 5, 2)
 		})
@@ -373,7 +369,7 @@ func TestApplyOutOfDateSnapshot(t *testing.T) {
 		}
 		assertFileCount(t, 11, 0)
 
-		err = store.TakeSnapshot(uint64(3), raftpb.ConfState{Nodes: []uint64{1}}, make([]byte, 10))
+		err = store.TakeSnapshot(uint64(3), raftpb.ConfState{Voters: []uint64{1}}, make([]byte, 10))
 		require.NoError(t, err)
 		assertFileCount(t, 11, 1)
 

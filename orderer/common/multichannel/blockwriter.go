@@ -177,13 +177,14 @@ func (bw *BlockWriter) WriteBlock(block *cb.Block, encodedMetadataValue []byte) 
 
 // WriteBlockSync is same as WriteBlock, but commits block synchronously.
 // Note: WriteConfigBlock should use WriteBlockSync instead of WriteBlock.
-//       If the block contains a transaction that remove the node from consenters,
-//       the node will switch to follower and pull blocks from other nodes.
-//       Suppose writing block asynchronously, the block maybe not persist to disk
-//       when the follower chain starts working. The follower chain will read a block
-//       before the config block, in which the node is still a consenter, so the follower
-//       chain will switch to the consensus chain. That's a dead loop!
-//       So WriteConfigBlock should use WriteBlockSync instead of WriteBlock.
+//
+//	If the block contains a transaction that remove the node from consenters,
+//	the node will switch to follower and pull blocks from other nodes.
+//	Suppose writing block asynchronously, the block maybe not persist to disk
+//	when the follower chain starts working. The follower chain will read a block
+//	before the config block, in which the node is still a consenter, so the follower
+//	chain will switch to the consensus chain. That's a dead loop!
+//	So WriteConfigBlock should use WriteBlockSync instead of WriteBlock.
 func (bw *BlockWriter) WriteBlockSync(block *cb.Block, encodedMetadataValue []byte) {
 	bw.committingBlock.Lock()
 	bw.lastBlock = block
@@ -196,7 +197,10 @@ func (bw *BlockWriter) WriteBlockSync(block *cb.Block, encodedMetadataValue []by
 // this ensures that the encoded config sequence numbers stay in sync
 func (bw *BlockWriter) commitBlock(encodedMetadataValue []byte) {
 	bw.addLastConfig(bw.lastBlock)
-	bw.addBlockSignature(bw.lastBlock, encodedMetadataValue)
+
+	if len(bw.lastBlock.Metadata.Metadata[cb.BlockMetadataIndex_SIGNATURES]) == 0 {
+		bw.addBlockSignature(bw.lastBlock, encodedMetadataValue)
+	}
 
 	err := bw.support.Append(bw.lastBlock)
 	if err != nil {

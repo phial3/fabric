@@ -67,7 +67,7 @@ type Channel interface {
 	// Merkle tree to compute the BlockData hash
 	BlockDataHashingStructureWidth() uint32
 
-	// OrdererAddresses returns the list of valid orderer addresses to connect to to invoke Broadcast/Deliver
+	// OrdererAddresses returns the list of valid orderer addresses to connect to invoke Broadcast/Deliver
 	OrdererAddresses() []string
 
 	// Capabilities defines the capabilities for a channel
@@ -109,10 +109,7 @@ type Orderer interface {
 	// MaxChannelsCount returns the maximum count of channels to allow for an ordering network
 	MaxChannelsCount() uint64
 
-	// KafkaBrokers returns the addresses (IP:port notation) of a set of "bootstrap"
-	// Kafka brokers, i.e. this is not necessarily the entire set of Kafka brokers
-	// used for ordering
-	KafkaBrokers() []string
+	Consenters() []*cb.Consenter
 
 	// Organizations returns the organizations for the ordering service
 	Organizations() map[string]OrdererOrg
@@ -135,6 +132,9 @@ type ChannelCapabilities interface {
 
 	// OrgSpecificOrdererEndpoints return true if the channel config processing allows orderer orgs to specify their own endpoints
 	OrgSpecificOrdererEndpoints() bool
+
+	// ConsensusTypeBFT returns true if the channel must support BFT consensus
+	ConsensusTypeBFT() bool
 }
 
 // ApplicationCapabilities defines the capabilities for the application portion of a channel
@@ -194,6 +194,10 @@ type ApplicationCapabilities interface {
 	// KeyLevelEndorsement returns true if this channel supports endorsement
 	// policies expressible at a ledger key granularity, as described in FAB-8812
 	KeyLevelEndorsement() bool
+
+	// PurgePvtData returns true if this channel supports purging of private
+	// data entries
+	PurgePvtData() bool
 }
 
 // OrdererCapabilities defines the capabilities for the orderer portion of a channel

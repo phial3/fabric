@@ -8,11 +8,12 @@ package pvtdata
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"testing"
 
 	"github.com/hyperledger/fabric/integration"
 	"github.com/hyperledger/fabric/integration/nwo"
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
@@ -47,4 +48,8 @@ var _ = SynchronizedAfterSuite(func() {
 
 func StartPort() int {
 	return integration.PrivateDataBasePort.StartPortForNode()
+}
+
+func CollectionConfig(collConfigFile string) string {
+	return filepath.Join("testdata", "collection_configs", collConfigFile)
 }

@@ -40,7 +40,8 @@ type ClusterConsenter interface {
 
 // MetadataValidator performs the validation of updates to ConsensusMetadata during config updates to the channel.
 // NOTE: We expect the MetadataValidator interface to be optionally implemented by the Consenter implementation.
-//       If a Consenter does not implement MetadataValidator, we default to using a no-op MetadataValidator.
+//
+//	If a Consenter does not implement MetadataValidator, we default to using a no-op MetadataValidator.
 type MetadataValidator interface {
 	// ValidateConsensusMetadata determines the validity of a ConsensusMetadata update during config
 	// updates on the channel.
@@ -53,8 +54,9 @@ type MetadataValidator interface {
 // Note, that in order to allow flexibility in the implementation, it is the responsibility of the implementer
 // to take the ordered messages, send them through the blockcutter.Receiver supplied via HandleChain to cut blocks,
 // and ultimately write the ledger also supplied via HandleChain.  This design allows for two primary flows
-// 1. Messages are ordered into a stream, the stream is cut into blocks, the blocks are committed (solo, kafka)
-// 2. Messages are cut into blocks, the blocks are ordered, then the blocks are committed (sbft)
+//  1. Messages are ordered into a stream, the stream is cut into blocks, the blocks are committed (deprecated, orderer
+//     no longer supports solo & kafka)
+//  2. Messages are cut into blocks, the blocks are ordered, then the blocks are committed (etcdraft)
 type Chain interface {
 	// Order accepts a message which has been processed at a given configSeq.
 	// If the configSeq advances, it is the responsibility of the consenter
@@ -98,9 +100,8 @@ type ConsenterSupport interface {
 	identity.SignerSerializer
 	msgprocessor.Processor
 
-	// VerifyBlockSignature verifies a signature of a block with a given optional
-	// configuration (can be nil).
-	VerifyBlockSignature([]*protoutil.SignedData, *cb.ConfigEnvelope) error
+	// SignatureVerifier verifies a signature of a block.
+	SignatureVerifier() protoutil.BlockVerifierFunc
 
 	// BlockCutter returns the block cutting helper for this channel.
 	BlockCutter() blockcutter.Receiver

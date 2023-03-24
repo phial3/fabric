@@ -99,6 +99,9 @@ func TestTxSimulationResultWithPvtData(t *testing.T) {
 	rwSetBuilder.AddToHashedReadSet("ns2", "coll1", "key2", version.NewHeight(1, 1))
 	rwSetBuilder.AddToPvtAndHashedWriteSet("ns2", "coll2", "key1", []byte("pvt-ns2-coll2-key1-value"))
 
+	// pvt rwset ns3
+	rwSetBuilder.AddToPvtAndHashedWriteSetForPurge("ns3", "coll1", "key1")
+
 	actualSimRes, err := rwSetBuilder.GetTxSimulationResults()
 	require.NoError(t, err)
 
@@ -111,6 +114,15 @@ func TestTxSimulationResultWithPvtData(t *testing.T) {
 
 	pvtNs2Coll2 := &kvrwset.KVRWSet{
 		Writes: []*kvrwset.KVWrite{newKVWrite("key1", []byte("pvt-ns2-coll2-key1-value"))},
+	}
+
+	pvtNs3Coll1 := &kvrwset.KVRWSet{
+		Writes: []*kvrwset.KVWrite{
+			{
+				Key:      "key1",
+				IsDelete: true,
+			},
+		},
 	}
 
 	expectedPvtRWSet := &rwset.TxPvtReadWriteSet{
@@ -135,6 +147,15 @@ func TestTxSimulationResultWithPvtData(t *testing.T) {
 					},
 				},
 			},
+			{
+				Namespace: "ns3",
+				CollectionPvtRwset: []*rwset.CollectionPvtReadWriteSet{
+					{
+						CollectionName: "coll1",
+						Rwset:          serializeTestProtoMsg(t, pvtNs3Coll1),
+					},
+				},
+			},
 		},
 	}
 	require.Equal(t, expectedPvtRWSet, actualSimRes.PvtSimulationResults)
@@ -150,6 +171,8 @@ func TestTxSimulationResultWithPvtData(t *testing.T) {
 		Reads:  []*kvrwset.KVRead{NewKVRead("key1", version.NewHeight(1, 1))},
 		Writes: []*kvrwset.KVWrite{newKVWrite("key1", []byte("ns2-key1-value"))},
 	}
+
+	pubNs3 := &kvrwset.KVRWSet{}
 
 	hashedNs1Coll1 := &kvrwset.HashedRWSet{
 		HashedReads: []*kvrwset.KVReadHash{
@@ -176,6 +199,16 @@ func TestTxSimulationResultWithPvtData(t *testing.T) {
 	hashedNs2Coll2 := &kvrwset.HashedRWSet{
 		HashedWrites: []*kvrwset.KVWriteHash{
 			constructTestPvtKVWriteHash(t, "key1", []byte("pvt-ns2-coll2-key1-value")),
+		},
+	}
+
+	hashedNs3Coll1 := &kvrwset.HashedRWSet{
+		HashedWrites: []*kvrwset.KVWriteHash{
+			{
+				KeyHash:  util.ComputeStringHash("key1"),
+				IsDelete: true,
+				IsPurge:  true,
+			},
 		},
 	}
 
@@ -212,9 +245,23 @@ func TestTxSimulationResultWithPvtData(t *testing.T) {
 		},
 	}
 	require.Equal(t, combinedNs2, actualSimRes.PubSimulationResults.NsRwset[1])
+
+	combinedNs3 := &rwset.NsReadWriteSet{
+		Namespace: "ns3",
+		Rwset:     serializeTestProtoMsg(t, pubNs3),
+		CollectionHashedRwset: []*rwset.CollectionHashedReadWriteSet{
+			{
+				CollectionName: "coll1",
+				HashedRwset:    serializeTestProtoMsg(t, hashedNs3Coll1),
+				PvtRwsetHash:   util.ComputeHash(serializeTestProtoMsg(t, pvtNs3Coll1)),
+			},
+		},
+	}
+	require.Equal(t, combinedNs3, actualSimRes.PubSimulationResults.NsRwset[2])
+
 	expectedPubRWSet := &rwset.TxReadWriteSet{
 		DataModel: rwset.TxReadWriteSet_KV,
-		NsRwset:   []*rwset.NsReadWriteSet{combinedNs1, combinedNs2},
+		NsRwset:   []*rwset.NsReadWriteSet{combinedNs1, combinedNs2, combinedNs3},
 	}
 	require.Equal(t, expectedPubRWSet, actualSimRes.PubSimulationResults)
 }

@@ -11,7 +11,7 @@ import (
 	"io/ioutil"
 	"sort"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/hyperledger/fabric/common/flogging"
@@ -318,7 +318,7 @@ var _ = Describe("Connection", func() {
 		})
 	})
 
-	When("an update modifies the global endpoints but does does not affect the org endpoints", func() {
+	When("an update modifies the global endpoints but does not affect the org endpoints", func() {
 		BeforeEach(func() {
 			cs.Update(nil, map[string]orderers.OrdererOrg{
 				"org1": org1,

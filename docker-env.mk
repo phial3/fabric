@@ -21,7 +21,8 @@ ifneq ($(NO_PROXY),)
 DOCKER_BUILD_FLAGS+=--build-arg 'NO_PROXY=$(NO_PROXY)'
 endif
 
-DBUILD = docker build --force-rm $(DOCKER_BUILD_FLAGS)
+DOCKER_BUILD ?= docker build --force-rm
+DBUILD = $(DOCKER_BUILD) $(DOCKER_BUILD_FLAGS)
 
 DOCKER_NS ?= hyperledger
 DOCKER_TAG=$(ARCH)-$(PROJECT_VERSION)
@@ -35,7 +36,7 @@ BASE_DOCKER_LABEL=org.hyperledger.fabric
 # and timestamps of files when deciding if a given target needs to be rebuilt.
 # Docker containers throw a wrench into the works because the output of docker
 # builds do not translate into standard files that makefile rules can evaluate.
-# Therefore, we have to fake it.  We do this by constructioning our rules such
+# Therefore, we have to fake it.  We do this by constructing our rules such
 # as
 #       my-docker-target/.dummy:
 #              docker build ...
@@ -47,7 +48,7 @@ BASE_DOCKER_LABEL=org.hyperledger.fabric
 #
 # This isn't perfect, however.  For instance, someone could delete a docker
 # container using docker-rmi outside of the build, and make would be fooled
-# into thinking the dependency is statisfied when it really isn't.  This is
+# into thinking the dependency is satisfied when it really isn't.  This is
 # our closest approximation we can come up with.
 #
 # As an aside, also note that we incorporate the version number in the .dummy

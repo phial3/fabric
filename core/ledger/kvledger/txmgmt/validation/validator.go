@@ -78,38 +78,43 @@ func (v *validator) preLoadCommittedVersionOfRSet(blk *block) error {
 }
 
 // validateAndPrepareBatch performs validation and prepares the batch for final writes
-func (v *validator) validateAndPrepareBatch(blk *block, doMVCCValidation bool) (*publicAndHashUpdates, error) {
+func (v *validator) validateAndPrepareBatch(blk *block, doMVCCValidation bool) (*publicAndHashUpdates, []*AppInitiatedPurgeUpdate, error) {
 	// Check whether statedb implements BulkOptimizable interface. For now,
 	// only CouchDB implements BulkOptimizable to reduce the number of REST
 	// API calls from peer to CouchDB instance.
 	if v.db.IsBulkOptimizable() {
 		err := v.preLoadCommittedVersionOfRSet(blk)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
 	updates := newPubAndHashUpdates()
+	purgeTracker := newPvtdataPurgeTracker()
+
 	for _, tx := range blk.txs {
 		var validationCode peer.TxValidationCode
 		var err error
 		if validationCode, err = v.validateEndorserTX(tx.rwset, doMVCCValidation, updates); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		tx.validationCode = validationCode
 		if validationCode == peer.TxValidationCode_VALID {
 			logger.Debugf("Block [%d] Transaction index [%d] TxId [%s] marked as valid by state validator. ContainsPostOrderWrites [%t]", blk.num, tx.indexInBlock, tx.id, tx.containsPostOrderWrites)
+
 			committingTxHeight := version.NewHeight(blk.num, uint64(tx.indexInBlock))
 			if err := updates.applyWriteSet(tx.rwset, committingTxHeight, v.db, tx.containsPostOrderWrites); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
+
+			purgeTracker.update(tx.rwset, committingTxHeight)
 		} else {
 			logger.Warningf("Block [%d] Transaction index [%d] TxId [%s] marked as invalid by state validator. Reason code [%s]",
 				blk.num, tx.indexInBlock, tx.id, validationCode.String())
 		}
 	}
-	return updates, nil
+	return updates, purgeTracker.getUpdates(), nil
 }
 
 // validateEndorserTX validates endorser transaction
@@ -156,9 +161,9 @@ func (v *validator) validateTx(txRWSet *rwsetutil.TxRwSet, updates *publicAndHas
 	return peer.TxValidationCode_VALID, nil
 }
 
-////////////////////////////////////////////////////////////////////////////////
-/////                 Validation of public read-set
-////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////
+// ///                 Validation of public read-set
+// //////////////////////////////////////////////////////////////////////////////
 func (v *validator) validateReadSet(ns string, kvReads []*kvrwset.KVRead, updates *privacyenabledstate.PubUpdateBatch) (bool, error) {
 	for _, kvRead := range kvReads {
 		if valid, err := v.validateKVRead(ns, kvRead, updates); !valid || err != nil {
@@ -194,9 +199,9 @@ func (v *validator) validateKVRead(ns string, kvRead *kvrwset.KVRead, updates *p
 	return true, nil
 }
 
-////////////////////////////////////////////////////////////////////////////////
-/////                 Validation of range queries
-////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////
+// ///                 Validation of range queries
+// //////////////////////////////////////////////////////////////////////////////
 func (v *validator) validateRangeQueries(ns string, rangeQueriesInfo []*kvrwset.RangeQueryInfo, updates *privacyenabledstate.PubUpdateBatch) (bool, error) {
 	for _, rqi := range rangeQueriesInfo {
 		if valid, err := v.validateRangeQuery(ns, rqi, updates); !valid || err != nil {
@@ -238,9 +243,9 @@ func (v *validator) validateRangeQuery(ns string, rangeQueryInfo *kvrwset.RangeQ
 	return qv.validate()
 }
 
-////////////////////////////////////////////////////////////////////////////////
-/////                 Validation of hashed read-set
-////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////
+// ///                 Validation of hashed read-set
+// //////////////////////////////////////////////////////////////////////////////
 func (v *validator) validateNsHashedReadSets(ns string, collHashedRWSets []*rwsetutil.CollHashedRwSet,
 	updates *privacyenabledstate.HashedUpdateBatch) (bool, error) {
 	for _, collHashedRWSet := range collHashedRWSets {
@@ -285,4 +290,49 @@ func (v *validator) validateKVReadHash(ns, coll string, kvReadHash *kvrwset.KVRe
 		return false, nil
 	}
 	return true, nil
+}
+
+type AppInitiatedPurgeUpdate struct {
+	CompositeKey *privacyenabledstate.HashedCompositeKey
+	Version      *version.Height
+}
+
+type pvtdataPurgeTracker struct {
+	m map[privacyenabledstate.HashedCompositeKey]*AppInitiatedPurgeUpdate
+}
+
+func newPvtdataPurgeTracker() *pvtdataPurgeTracker {
+	return &pvtdataPurgeTracker{
+		m: map[privacyenabledstate.HashedCompositeKey]*AppInitiatedPurgeUpdate{},
+	}
+}
+
+func (p *pvtdataPurgeTracker) update(rwset *rwsetutil.TxRwSet, version *version.Height) {
+	for _, nsRwSets := range rwset.NsRwSets {
+		for _, collHashedRwSet := range nsRwSets.CollHashedRwSets {
+			for _, hashedWrite := range collHashedRwSet.HashedRwSet.GetHashedWrites() {
+
+				ck := privacyenabledstate.HashedCompositeKey{
+					Namespace:      nsRwSets.NameSpace,
+					CollectionName: collHashedRwSet.CollectionName,
+					KeyHash:        string(hashedWrite.GetKeyHash()),
+				}
+
+				if hashedWrite.IsPurge {
+					p.m[ck] = &AppInitiatedPurgeUpdate{
+						CompositeKey: &ck,
+						Version:      version,
+					}
+				}
+			}
+		}
+	}
+}
+
+func (p *pvtdataPurgeTracker) getUpdates() []*AppInitiatedPurgeUpdate {
+	updates := []*AppInitiatedPurgeUpdate{}
+	for _, update := range p.m {
+		updates = append(updates, update)
+	}
+	return updates
 }

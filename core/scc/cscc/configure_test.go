@@ -8,7 +8,6 @@ package cscc
 
 import (
 	"errors"
-	"io/ioutil"
 	"net"
 	"os"
 	"testing"
@@ -132,7 +131,7 @@ func TestConfigerInvokeInvalidParameters(t *testing.T) {
 		t,
 		int32(shim.OK),
 		res.Status,
-		"invoke invoke expected wrong function name provided",
+		"invoke expected wrong function name provided",
 	)
 	require.Equal(t, "Requested function fooFunction not found.", res.Message)
 
@@ -149,11 +148,7 @@ func TestConfigerInvokeInvalidParameters(t *testing.T) {
 		res.Status,
 		"invoke expected to fail in ccc2cc context",
 	)
-	require.Equal(
-		t,
-		"Failed to identify the called chaincode: could not unmarshal proposal: proto: can't skip unknown wire type 7",
-		res.Message,
-	)
+	require.Contains(t, res.Message, "Failed to identify the called chaincode: could not unmarshal proposal")
 
 	mockACLProvider.CheckACLReturns(nil)
 	args = [][]byte{[]byte("GetConfigBlock"), []byte("testChannelID")}
@@ -240,9 +235,7 @@ func TestConfigerInvokeJoinChainWrongParams(t *testing.T) {
 }
 
 func TestConfigerInvokeJoinChainCorrectParams(t *testing.T) {
-	testDir, err := ioutil.TempDir("", "cscc_test")
-	require.NoError(t, err, "error in creating test dir")
-	defer os.RemoveAll(testDir)
+	testDir := t.TempDir()
 
 	ledgerInitializer := ledgermgmttest.NewInitializer(testDir)
 	ledgerInitializer.CustomTxProcessors = map[cb.HeaderType]ledger.CustomTxProcessor{
@@ -355,9 +348,7 @@ func TestConfigerInvokeJoinChainCorrectParams(t *testing.T) {
 }
 
 func TestConfigerInvokeJoinChainBySnapshot(t *testing.T) {
-	testDir, err := ioutil.TempDir("", "cscc_test_bysnapshot")
-	require.NoError(t, err, "error in creating test dir")
-	defer os.RemoveAll(testDir)
+	testDir := t.TempDir()
 
 	ledgerInitializer := ledgermgmttest.NewInitializer(testDir)
 	ledgerInitializer.CustomTxProcessors = map[cb.HeaderType]ledger.CustomTxProcessor{
@@ -441,9 +432,7 @@ func TestConfigerInvokeJoinChainBySnapshot(t *testing.T) {
 }
 
 func TestConfigerInvokeGetChannelConfig(t *testing.T) {
-	testDir, err := ioutil.TempDir("", "cscc_test_GetChannelConfig")
-	require.NoError(t, err)
-	defer os.RemoveAll(testDir)
+	testDir := t.TempDir()
 
 	ledgerInitializer := ledgermgmttest.NewInitializer(testDir)
 	ledgerInitializer.CustomTxProcessors = map[cb.HeaderType]ledger.CustomTxProcessor{
@@ -575,6 +564,7 @@ func newPeerConfiger(t *testing.T, ledgerMgr *ledgermgmt.LedgerMgr, grpcServer *
 		signer,
 		deserManager,
 		cryptoProvider,
+		nil,
 	)
 	secAdv := peergossip.NewSecurityAdvisor(deserManager)
 	defaultSecureDialOpts := func() []grpc.DialOption {

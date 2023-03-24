@@ -141,7 +141,7 @@ func (c *client) currentCommitHash() []byte {
 	return commitHash.Value
 }
 
-///////////////////////   simulator wrapper functions  ///////////////////////
+// /////////////////////   simulator wrapper functions  ///////////////////////
 type simulator struct {
 	ledger.TxSimulator
 	txid   string
@@ -163,6 +163,12 @@ func (s *simulator) setState(ns, key string, val string) {
 func (s *simulator) setPvtdata(ns, coll, key string, val string) {
 	s.assert.NoError(
 		s.SetPrivateData(ns, coll, key, []byte(val)),
+	)
+}
+
+func (s *simulator) purgePvtdata(ns, coll, key string) {
+	s.assert.NoError(
+		s.PurgePrivateData(ns, coll, key),
 	)
 }
 

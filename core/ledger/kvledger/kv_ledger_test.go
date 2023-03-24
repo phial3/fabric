@@ -14,11 +14,13 @@ import (
 	"github.com/hyperledger/fabric-protos-go/common"
 	"github.com/hyperledger/fabric-protos-go/ledger/queryresult"
 	"github.com/hyperledger/fabric-protos-go/ledger/rwset"
+	"github.com/hyperledger/fabric-protos-go/ledger/rwset/kvrwset"
 	"github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/common/ledger/testutil"
 	"github.com/hyperledger/fabric/common/util"
 	"github.com/hyperledger/fabric/core/ledger"
+	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/rwsetutil"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/validation"
 	"github.com/hyperledger/fabric/core/ledger/mock"
 	"github.com/hyperledger/fabric/core/ledger/pvtdatapolicy"
@@ -61,8 +63,7 @@ func TestKVLedgerNilHistoryDBProvider(t *testing.T) {
 
 func TestKVLedgerBlockStorage(t *testing.T) {
 	t.Run("green-path", func(t *testing.T) {
-		conf, cleanup := testConfig(t)
-		defer cleanup()
+		conf := testConfig(t)
 		provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
 		defer provider.Close()
 
@@ -159,8 +160,7 @@ func TestKVLedgerBlockStorage(t *testing.T) {
 	})
 
 	t.Run("error-path", func(t *testing.T) {
-		conf, cleanup := testConfig(t)
-		defer cleanup()
+		conf := testConfig(t)
 		provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
 		defer provider.Close()
 
@@ -177,8 +177,7 @@ func TestKVLedgerBlockStorage(t *testing.T) {
 }
 
 func TestAddCommitHash(t *testing.T) {
-	conf, cleanup := testConfig(t)
-	defer cleanup()
+	conf := testConfig(t)
 	provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
 	defer provider.Close()
 
@@ -230,8 +229,7 @@ func TestAddCommitHash(t *testing.T) {
 
 func TestKVLedgerBlockStorageWithPvtdata(t *testing.T) {
 	t.Skip()
-	conf, cleanup := testConfig(t)
-	defer cleanup()
+	conf := testConfig(t)
 	provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
 	defer provider.Close()
 
@@ -296,8 +294,7 @@ func TestKVLedgerBlockStorageWithPvtdata(t *testing.T) {
 }
 
 func TestKVLedgerDBRecovery(t *testing.T) {
-	conf, cleanup := testConfig(t)
-	defer cleanup()
+	conf := testConfig(t)
 	nsCollBtlConfs := []*nsCollBtlConfig{
 		{
 			namespace: "ns",
@@ -347,9 +344,9 @@ func TestKVLedgerDBRecovery(t *testing.T) {
 		map[string]string{"key1": "value1.2", "key2": "value2.2", "key3": "value3.2"},
 		map[string]string{"key1": "pvtValue1.2", "key2": "pvtValue2.2", "key3": "pvtValue3.2"})
 
-	_, _, err = ledger1.(*kvLedger).txmgr.ValidateAndPrepare(blockAndPvtdata2, true)
+	_, _, _, err = ledger1.(*kvLedger).txmgr.ValidateAndPrepare(blockAndPvtdata2, true)
 	require.NoError(t, err)
-	require.NoError(t, ledger1.(*kvLedger).commitToPvtAndBlockStore(blockAndPvtdata2))
+	require.NoError(t, ledger1.(*kvLedger).commitToPvtAndBlockStore(blockAndPvtdata2, nil))
 
 	// block storage should be as of block-2 but the state and history db should be as of block-1
 	checkBCSummaryForTest(t, ledger1,
@@ -404,9 +401,9 @@ func TestKVLedgerDBRecovery(t *testing.T) {
 		map[string]string{"key1": "value1.3", "key2": "value2.3", "key3": "value3.3"},
 		map[string]string{"key1": "pvtValue1.3", "key2": "pvtValue2.3", "key3": "pvtValue3.3"},
 	)
-	_, _, err = ledger2.(*kvLedger).txmgr.ValidateAndPrepare(blockAndPvtdata3, true)
+	_, _, _, err = ledger2.(*kvLedger).txmgr.ValidateAndPrepare(blockAndPvtdata3, true)
 	require.NoError(t, err)
-	require.NoError(t, ledger2.(*kvLedger).commitToPvtAndBlockStore(blockAndPvtdata3))
+	require.NoError(t, ledger2.(*kvLedger).commitToPvtAndBlockStore(blockAndPvtdata3, nil))
 	// committing the transaction to state DB
 	require.NoError(t, ledger2.(*kvLedger).txmgr.Commit())
 
@@ -465,9 +462,9 @@ func TestKVLedgerDBRecovery(t *testing.T) {
 		map[string]string{"key1": "pvtValue1.4", "key2": "pvtValue2.4", "key3": "pvtValue3.4"},
 	)
 
-	_, _, err = ledger3.(*kvLedger).txmgr.ValidateAndPrepare(blockAndPvtdata4, true)
+	_, _, _, err = ledger3.(*kvLedger).txmgr.ValidateAndPrepare(blockAndPvtdata4, true)
 	require.NoError(t, err)
-	require.NoError(t, ledger3.(*kvLedger).commitToPvtAndBlockStore(blockAndPvtdata4))
+	require.NoError(t, ledger3.(*kvLedger).commitToPvtAndBlockStore(blockAndPvtdata4, nil))
 	require.NoError(t, ledger3.(*kvLedger).historyDB.Commit(blockAndPvtdata4.Block))
 
 	checkBCSummaryForTest(t, ledger3,
@@ -515,8 +512,7 @@ func TestKVLedgerDBRecovery(t *testing.T) {
 }
 
 func TestLedgerWithCouchDbEnabledWithBinaryAndJSONData(t *testing.T) {
-	conf, cleanup := testConfig(t)
-	defer cleanup()
+	conf := testConfig(t)
 	provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
 	defer provider.Close()
 	bg, gb := testutil.NewBlockGenerator(t, "testLedger", false)
@@ -627,8 +623,7 @@ func TestLedgerWithCouchDbEnabledWithBinaryAndJSONData(t *testing.T) {
 }
 
 func TestPvtDataAPIs(t *testing.T) {
-	conf, cleanup := testConfig(t)
-	defer cleanup()
+	conf := testConfig(t)
 	provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
 	defer provider.Close()
 
@@ -649,7 +644,7 @@ func TestPvtDataAPIs(t *testing.T) {
 
 	sampleData := sampleDataWithPvtdataForSelectiveTx(t, bg)
 	for _, sampleDatum := range sampleData {
-		require.NoError(t, kvlgr.commitToPvtAndBlockStore(sampleDatum))
+		require.NoError(t, kvlgr.commitToPvtAndBlockStore(sampleDatum, nil))
 	}
 
 	// block 2 has no pvt data
@@ -701,20 +696,30 @@ func TestPvtDataAPIs(t *testing.T) {
 	// any other transaction entry should be nil
 	require.Nil(t, blockAndPvtdata.PvtData[2])
 
-	// test missing data retrieval in the presence of invalid tx. Block 6 had
-	// missing data (for tx4 and tx5). Though tx5 was marked as invalid tx,
-	// both tx4 and tx5 missing data should be returned
-	expectedMissingDataInfo := make(ledger.MissingPvtDataInfo)
-	expectedMissingDataInfo.Add(6, 4, "ns-4", "coll-4")
-	expectedMissingDataInfo.Add(6, 5, "ns-5", "coll-5")
-	missingDataInfo, err := lgr.(*kvLedger).GetMissingPvtDataInfoForMostRecentBlocks(1)
+	// test missing data retrieval in the presence of invalid tx. Block 7 had
+	// the missing data for tx1 and tx2, and Block 6 had missing data (for tx4 and tx5).
+	// Though tx5 was marked as invalid tx, both tx4 and tx5 missing data should be returned
+	missingDataTracker, err := lgr.GetMissingPvtDataTracker()
 	require.NoError(t, err)
-	require.Equal(t, expectedMissingDataInfo, missingDataInfo)
+
+	expectedMissingDataInfoBlk7 := ledger.MissingPvtDataInfo{}
+	expectedMissingDataInfoBlk7.Add(7, 1, "ns-1", "coll-1")
+	expectedMissingDataInfoBlk7.Add(7, 2, "ns-2", "coll-2")
+	missingDataInfo, err := missingDataTracker.GetMissingPvtDataInfoForMostRecentBlocks(1)
+	require.NoError(t, err)
+	require.Equal(t, expectedMissingDataInfoBlk7, missingDataInfo)
+
+	// The usage of the same missing data tracker instance should return next set of missing data now
+	expectedMissingDataInfoBlk6 := make(ledger.MissingPvtDataInfo)
+	expectedMissingDataInfoBlk6.Add(6, 4, "ns-4", "coll-4")
+	expectedMissingDataInfoBlk6.Add(6, 5, "ns-5", "coll-5")
+	missingDataInfo, err = missingDataTracker.GetMissingPvtDataInfoForMostRecentBlocks(1)
+	require.NoError(t, err)
+	require.Equal(t, expectedMissingDataInfoBlk6, missingDataInfo)
 }
 
 func TestCrashAfterPvtdataStoreCommit(t *testing.T) {
-	conf, cleanup := testConfig(t)
-	defer cleanup()
+	conf := testConfig(t)
 	ccInfoProvider := &mock.DeployedChaincodeInfoProvider{}
 	ccInfoProvider.CollectionInfoReturns(&peer.StaticCollectionConfig{BlockToLive: 0}, nil)
 	provider := testutilNewProvider(conf, t, ccInfoProvider)
@@ -737,7 +742,7 @@ func TestCrashAfterPvtdataStoreCommit(t *testing.T) {
 	dataAtCrash := sampleData[3]
 
 	for _, sampleDatum := range dataBeforeCrash {
-		require.NoError(t, lgr.(*kvLedger).commitToPvtAndBlockStore(sampleDatum))
+		require.NoError(t, lgr.(*kvLedger).commitToPvtAndBlockStore(sampleDatum, nil))
 	}
 	blockNumAtCrash := dataAtCrash.Block.Header.Number
 	var pvtdataAtCrash []*ledger.TxPvtData
@@ -745,7 +750,7 @@ func TestCrashAfterPvtdataStoreCommit(t *testing.T) {
 		pvtdataAtCrash = append(pvtdataAtCrash, p)
 	}
 	// call Commit on pvt data store and mimic a crash before committing the block to block store
-	require.NoError(t, lgr.(*kvLedger).pvtdataStore.Commit(blockNumAtCrash, pvtdataAtCrash, nil))
+	require.NoError(t, lgr.(*kvLedger).pvtdataStore.Commit(blockNumAtCrash, pvtdataAtCrash, nil, nil))
 
 	// Now, assume that peer fails here before committing the block to blockstore.
 	lgr.Close()
@@ -789,7 +794,7 @@ func TestCrashAfterPvtdataStoreCommit(t *testing.T) {
 			},
 		},
 	}
-	require.NoError(t, lgr1.(*kvLedger).commitToPvtAndBlockStore(dataAtCrash))
+	require.NoError(t, lgr1.(*kvLedger).commitToPvtAndBlockStore(dataAtCrash, nil))
 	testVerifyPvtData(t, lgr1, blockNumAtCrash, expectedPvtData)
 	bcInfo, err = lgr1.GetBlockchainInfo()
 	require.NoError(t, err)
@@ -814,8 +819,7 @@ func testVerifyPvtData(t *testing.T, lgr ledger.PeerLedger, blockNum uint64, exp
 }
 
 func TestPvtStoreAheadOfBlockStore(t *testing.T) {
-	conf, cleanup := testConfig(t)
-	defer cleanup()
+	conf := testConfig(t)
 	ccInfoProvider := &mock.DeployedChaincodeInfoProvider{}
 	ccInfoProvider.CollectionInfoReturns(&peer.StaticCollectionConfig{BlockToLive: 0}, nil)
 	provider := testutilNewProvider(conf, t, ccInfoProvider)
@@ -841,7 +845,7 @@ func TestPvtStoreAheadOfBlockStore(t *testing.T) {
 
 	sampleData := sampleDataWithPvtdataForSelectiveTx(t, bg)
 	for _, d := range sampleData[0:9] { // commit block number 0 to 8
-		require.NoError(t, kvlgr.commitToPvtAndBlockStore(d))
+		require.NoError(t, kvlgr.commitToPvtAndBlockStore(d, nil))
 	}
 
 	isPvtStoreAhead, err = kvlgr.isPvtDataStoreAheadOfBlockStore()
@@ -874,7 +878,7 @@ func TestPvtStoreAheadOfBlockStore(t *testing.T) {
 	// Add the last block directly to the pvtdataStore but not to blockstore. This would make
 	// the pvtdatastore height greater than the block store height.
 	validTxPvtData, validTxMissingPvtData := constructPvtDataAndMissingData(lastBlkAndPvtData)
-	err = kvlgr.pvtdataStore.Commit(lastBlkAndPvtData.Block.Header.Number, validTxPvtData, validTxMissingPvtData)
+	err = kvlgr.pvtdataStore.Commit(lastBlkAndPvtData.Block.Header.Number, validTxPvtData, validTxMissingPvtData, nil)
 	require.NoError(t, err)
 
 	// close and reopen.
@@ -900,7 +904,7 @@ func TestPvtStoreAheadOfBlockStore(t *testing.T) {
 	require.True(t, isPvtStoreAhead)
 
 	// bring the height of BlockStore equal to pvtdataStore
-	require.NoError(t, kvlgr.commitToPvtAndBlockStore(lastBlkAndPvtData))
+	require.NoError(t, kvlgr.commitToPvtAndBlockStore(lastBlkAndPvtData, nil))
 	info, err = lgr2.GetBlockchainInfo()
 	require.NoError(t, err)
 	require.Equal(t, uint64(11), info.Height)
@@ -913,8 +917,7 @@ func TestPvtStoreAheadOfBlockStore(t *testing.T) {
 }
 
 func TestCommitToPvtAndBlockstoreError(t *testing.T) {
-	conf, cleanup := testConfig(t)
-	defer cleanup()
+	conf := testConfig(t)
 	ccInfoProvider := &mock.DeployedChaincodeInfoProvider{}
 	ccInfoProvider.CollectionInfoReturns(&peer.StaticCollectionConfig{BlockToLive: 0}, nil)
 	provider1 := testutilNewProvider(conf, t, ccInfoProvider)
@@ -935,19 +938,19 @@ func TestCommitToPvtAndBlockstoreError(t *testing.T) {
 	kvlgr := lgr1.(*kvLedger)
 	sampleData := sampleDataWithPvtdataForSelectiveTx(t, bg)
 	for _, d := range sampleData[0:9] { // commit block number 1 to 9
-		require.NoError(t, kvlgr.commitToPvtAndBlockStore(d))
+		require.NoError(t, kvlgr.commitToPvtAndBlockStore(d, nil))
 	}
 
 	// try to write the last block again. The function should return an
 	// error from the private data store.
-	err = kvlgr.commitToPvtAndBlockStore(sampleData[8]) // block 9
+	err = kvlgr.commitToPvtAndBlockStore(sampleData[8], nil) // block 9
 	require.EqualError(t, err, "expected block number=10, received block number=9")
 
 	lastBlkAndPvtData := sampleData[9] // block 10
 	// Add the block directly to blockstore
 	require.NoError(t, kvlgr.blockStore.AddBlock(lastBlkAndPvtData.Block))
 	// Adding the same block should cause passing on the error caused by the block storgae
-	err = kvlgr.commitToPvtAndBlockStore(lastBlkAndPvtData)
+	err = kvlgr.commitToPvtAndBlockStore(lastBlkAndPvtData, nil)
 	require.EqualError(t, err, "block number should have been 11 but was 10")
 	// At the end, the pvt store status should be changed
 	pvtStoreCommitHt, err := kvlgr.pvtdataStore.LastCommittedBlockHeight()
@@ -966,7 +969,7 @@ func TestCollectionConfigHistoryRetriever(t *testing.T) {
 
 	init := func() {
 		var err error
-		conf, cleanupFunc := testConfig(t)
+		conf := testConfig(t)
 		mockDeployedCCInfoProvider = &mock.DeployedChaincodeInfoProvider{}
 		provider = testutilNewProvider(conf, t, mockDeployedCCInfoProvider)
 		ledgerID := "testLedger"
@@ -976,7 +979,6 @@ func TestCollectionConfigHistoryRetriever(t *testing.T) {
 		cleanup = func() {
 			lgr.Close()
 			provider.Close()
-			cleanupFunc()
 		}
 	}
 
@@ -1226,8 +1228,7 @@ func TestCommitNotifications(t *testing.T) {
 }
 
 func TestCommitNotificationsOnBlockCommit(t *testing.T) {
-	conf, cleanup := testConfig(t)
-	defer cleanup()
+	conf := testConfig(t)
 	provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
 	defer provider.Close()
 
@@ -1381,6 +1382,12 @@ func sampleDataWithPvtdataForSelectiveTx(t *testing.T, bg *testutil.BlockGenerat
 	txFilter.SetFlag(5, peer.TxValidationCode_INVALID_WRITESET)
 	blockAndpvtdata[5].Block.Metadata.Metadata[common.BlockMetadataIndex_TRANSACTIONS_FILTER] = txFilter
 
+	// add missing data for txNum 1, and 2 in block 6
+	missingData = ledger.TxMissingPvtData{}
+	missingData.Add(1, "ns-1", "coll-1", true)
+	missingData.Add(2, "ns-2", "coll-2", true)
+	blockAndpvtdata[6].MissingPvtData = missingData
+
 	return blockAndpvtdata
 }
 
@@ -1399,22 +1406,41 @@ func sampleDataWithPvtdataForAllTxs(t *testing.T, bg *testutil.BlockGenerator) [
 }
 
 func samplePvtData(t *testing.T, txNums []uint64) map[uint64]*ledger.TxPvtData {
-	pvtWriteSet := &rwset.TxPvtReadWriteSet{DataModel: rwset.TxReadWriteSet_KV}
-	pvtWriteSet.NsPvtRwset = []*rwset.NsPvtReadWriteSet{
-		{
-			Namespace: "ns-1",
-			CollectionPvtRwset: []*rwset.CollectionPvtReadWriteSet{
-				{
-					CollectionName: "coll-1",
-					Rwset:          []byte("RandomBytes-PvtRWSet-ns1-coll1"),
-				},
-				{
-					CollectionName: "coll-2",
-					Rwset:          []byte("RandomBytes-PvtRWSet-ns1-coll2"),
+	txPvtWS := &rwsetutil.TxPvtRwSet{
+		NsPvtRwSet: []*rwsetutil.NsPvtRwSet{
+			{
+				NameSpace: "ns-1",
+				CollPvtRwSets: []*rwsetutil.CollPvtRwSet{
+					{
+						CollectionName: "coll-1",
+						KvRwSet: &kvrwset.KVRWSet{
+							Writes: []*kvrwset.KVWrite{
+								{
+									Key:   "testKey",
+									Value: []byte("testValue"),
+								},
+							},
+						},
+					},
+					{
+						CollectionName: "coll-2",
+						KvRwSet: &kvrwset.KVRWSet{
+							Writes: []*kvrwset.KVWrite{
+								{
+									Key:   "testKey",
+									Value: []byte("testValue"),
+								},
+							},
+						},
+					},
 				},
 			},
 		},
 	}
+
+	pvtWriteSet, err := txPvtWS.ToProtoMsg()
+	require.NoError(t, err)
+
 	var pvtData []*ledger.TxPvtData
 	for _, txNum := range txNums {
 		pvtData = append(pvtData, &ledger.TxPvtData{SeqInBlock: txNum, WriteSet: pvtWriteSet})

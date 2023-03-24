@@ -186,7 +186,7 @@ func (v *verifier) verifyCommitHashNotExists() {
 	r.notContainCommitHash()
 }
 
-////////////  structs used by verifier  //////////////////////////////////////////////////////////////
+// //////////  structs used by verifier  //////////////////////////////////////////////////////////////
 type expectedCollConfInfo struct {
 	committingBlockNum uint64
 	collConfs          []*collConf
@@ -230,6 +230,25 @@ func (r *retrievedBlockAndPvtdata) pvtdataShouldContain(txSeq int, ns, coll, key
 		}
 	}
 	r.assert.FailNow("Requested kv not found")
+}
+
+func (r *retrievedBlockAndPvtdata) pvtdataShouldNotContainKey(ns, coll, key string) {
+	allTxPvtData := r.BlockAndPvtData.PvtData
+	for _, txPvtData := range allTxPvtData {
+		for _, nsdata := range txPvtData.WriteSet.NsPvtRwset {
+			if nsdata.Namespace == ns {
+				for _, colldata := range nsdata.CollectionPvtRwset {
+					if colldata.CollectionName == coll {
+						rwset := &kvrwset.KVRWSet{}
+						r.assert.NoError(proto.Unmarshal(colldata.Rwset, rwset))
+						for _, w := range rwset.Writes {
+							r.assert.NotEqual(w.Key, key)
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 func (r *retrievedBlockAndPvtdata) pvtdataShouldNotContain(ns, coll string) {

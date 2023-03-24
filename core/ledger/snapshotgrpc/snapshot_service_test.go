@@ -9,7 +9,6 @@ package snapshotgrpc
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"testing"
 
 	"github.com/hyperledger/fabric-protos-go/common"
@@ -34,8 +33,7 @@ type aclProvider interface {
 }
 
 func TestSnapshot(t *testing.T) {
-	testDir, err := ioutil.TempDir("", "snapshotgrpc")
-	require.NoError(t, err)
+	testDir := t.TempDir()
 
 	ledgerID := "testsnapshot"
 	ledgermgmtInitializer := ledgermgmttest.NewInitializer(testDir)
@@ -91,7 +89,7 @@ func TestSnapshot(t *testing.T) {
 		{
 			name:          "unmarshal error",
 			signedRequest: &pb.SignedSnapshotRequest{Request: []byte("dummy")},
-			errMsg:        "failed to unmarshal snapshot request: proto: can't skip unknown wire type 4",
+			errMsg:        "failed to unmarshal snapshot request",
 		},
 		{
 			name:          "missing channel ID",
@@ -117,11 +115,14 @@ func TestSnapshot(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := snapshotSvc.Generate(context.Background(), test.signedRequest)
-			require.EqualError(t, err, test.errMsg)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), test.errMsg)
 			_, err = snapshotSvc.Cancel(context.Background(), test.signedRequest)
-			require.EqualError(t, err, test.errMsg)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), test.errMsg)
 			_, err = snapshotSvc.QueryPendings(context.Background(), test.signedRequest)
-			require.EqualError(t, err, test.errMsg)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), test.errMsg)
 		})
 	}
 

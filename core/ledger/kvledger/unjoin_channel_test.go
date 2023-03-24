@@ -15,9 +15,8 @@ import (
 )
 
 func TestUnjoinChannel(t *testing.T) {
-	conf, cleanup := testConfig(t)
+	conf := testConfig(t)
 	conf.HistoryDBConfig.Enabled = true
-	defer cleanup()
 
 	ledgerID := "ledger_unjoin"
 
@@ -56,9 +55,8 @@ func TestUnjoinChannel(t *testing.T) {
 
 // Unjoining an unjoined channel is an error.
 func TestUnjoinUnjoinedChannelErrors(t *testing.T) {
-	conf, cleanup := testConfig(t)
+	conf := testConfig(t)
 	conf.HistoryDBConfig.Enabled = false
-	defer cleanup()
 
 	ledgerID := "ledger_unjoin_unjoined"
 
@@ -84,9 +82,8 @@ func TestUnjoinUnjoinedChannelErrors(t *testing.T) {
 }
 
 func TestUnjoinWithRunningPeerErrors(t *testing.T) {
-	conf, cleanup := testConfig(t)
+	conf := testConfig(t)
 	conf.HistoryDBConfig.Enabled = false
-	defer cleanup()
 
 	provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
 	defer provider.Close()
@@ -102,9 +99,8 @@ func TestUnjoinWithRunningPeerErrors(t *testing.T) {
 }
 
 func TestUnjoinWithMissingChannelErrors(t *testing.T) {
-	conf, cleanup := testConfig(t)
+	conf := testConfig(t)
 	conf.HistoryDBConfig.Enabled = false
-	defer cleanup()
 
 	// fail if channel does not exist
 	require.EqualError(t, UnjoinChannel(conf, "__invalid_channel"),
@@ -112,9 +108,8 @@ func TestUnjoinWithMissingChannelErrors(t *testing.T) {
 }
 
 func TestUnjoinChannelWithInvalidMetadataErrors(t *testing.T) {
-	conf, cleanup := testConfig(t)
+	conf := testConfig(t)
 	conf.HistoryDBConfig.Enabled = false
-	defer cleanup()
 
 	provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
 
@@ -128,6 +123,6 @@ func TestUnjoinChannelWithInvalidMetadataErrors(t *testing.T) {
 	provider.Close()
 
 	// fail if metadata can not be unmarshaled
-	require.EqualError(t, UnjoinChannel(conf, ledgerID),
-		"unjoin channel [ledger_000099]: error unmarshalling ledger metadata: unexpected EOF")
+	require.ErrorContains(t, UnjoinChannel(conf, ledgerID),
+		"unjoin channel [ledger_000099]: error unmarshalling ledger metadata")
 }

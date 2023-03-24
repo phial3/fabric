@@ -44,6 +44,7 @@ func (s sleeper) Sleep(d time.Duration, doneC chan struct{}) {
 
 // LedgerInfo an adapter to provide the interface to query
 // the ledger committer for current ledger height
+//
 //go:generate counterfeiter -o fake/ledger_info.go --fake-name LedgerInfo . LedgerInfo
 type LedgerInfo interface {
 	// LedgerHeight returns current local ledger height
@@ -52,6 +53,7 @@ type LedgerInfo interface {
 
 // GossipServiceAdapter serves to provide basic functionality
 // required from gossip service by delivery service
+//
 //go:generate counterfeiter -o fake/gossip_service_adapter.go --fake-name GossipServiceAdapter . GossipServiceAdapter
 type GossipServiceAdapter interface {
 	// AddPayload adds payload to the local state sync buffer
@@ -111,9 +113,6 @@ const backoffExponentBase = 1.2
 // DeliverBlocks used to pull out blocks from the ordering service to
 // distributed them across peers
 func (d *Deliverer) DeliverBlocks() {
-	if d.BlockGossipDisabled {
-		d.Logger.Infof("Will pull blocks without forwarding them to remote peers via gossip")
-	}
 	failureCounter := 0
 	totalDuration := time.Duration(0)
 
@@ -132,18 +131,19 @@ func (d *Deliverer) DeliverBlocks() {
 		if failureCounter > 0 {
 			var sleepDuration time.Duration
 			if failureCounter-1 > maxFailures {
-				sleepDuration = d.MaxRetryDelay
+				sleepDuration = d.MaxRetryDelay // configured from peer.deliveryclient.reConnectBackoffThreshold
 			} else {
-				sleepDuration = time.Duration(math.Pow(1.2, float64(failureCounter-1))*100) * time.Millisecond
+				sleepDuration = time.Duration(math.Pow(backoffExponentBase, float64(failureCounter-1))*100) * time.Millisecond
 			}
 			totalDuration += sleepDuration
 			if totalDuration > d.MaxRetryDuration {
 				if d.YieldLeadership {
-					d.Logger.Warningf("attempted to retry block delivery for more than %v, giving up", d.MaxRetryDuration)
+					d.Logger.Warningf("attempted to retry block delivery for more than peer.deliveryclient.reconnectTotalTimeThreshold duration %v, giving up", d.MaxRetryDuration)
 					return
 				}
 				d.Logger.Warningf("peer is a static leader, ignoring peer.deliveryclient.reconnectTotalTimeThreshold")
 			}
+			d.Logger.Warningf("Disconnected from ordering service. Attempt to re-connect in %v", sleepDuration)
 			d.sleeper.Sleep(sleepDuration, d.DoneC)
 		}
 
@@ -167,6 +167,7 @@ func (d *Deliverer) DeliverBlocks() {
 		}
 
 		connLogger := d.Logger.With("orderer-address", endpoint.Address)
+		connLogger.Infow("Pulling next blocks from ordering service", "nextBlock", ledgerHeight)
 
 		recv := make(chan *orderer.DeliverResponse)
 		go func() {

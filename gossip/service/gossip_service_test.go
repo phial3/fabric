@@ -9,9 +9,7 @@ package service
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"net"
-	"os"
 	"testing"
 	"time"
 
@@ -71,11 +69,7 @@ type testTransientStore struct {
 func newTransientStore(t *testing.T) *testTransientStore {
 	s := &testTransientStore{}
 	var err error
-	s.tempdir, err = ioutil.TempDir("", "ts")
-	if err != nil {
-		t.Fatalf("Failed to create test directory, got err %s", err)
-		return s
-	}
+	s.tempdir = t.TempDir()
 	s.storeProvider, err = transientstore.NewStoreProvider(s.tempdir)
 	if err != nil {
 		t.Fatalf("Failed to open store, got err %s", err)
@@ -91,7 +85,6 @@ func newTransientStore(t *testing.T) *testTransientStore {
 
 func (s *testTransientStore) tearDown() {
 	s.storeProvider.Close()
-	os.RemoveAll(s.tempdir)
 }
 
 func (s *testTransientStore) Persist(txid string, blockHeight uint64,
@@ -123,6 +116,7 @@ func TestInitGossipService(t *testing.T) {
 		signer,
 		deserManager,
 		cryptoProvider,
+		nil,
 	)
 	secAdv := peergossip.NewSecurityAdvisor(deserManager)
 	gossipConfig, err := gossip.GlobalConfig(endpoint, nil)
@@ -304,7 +298,6 @@ func TestWithStaticDeliverClientNotLeader(t *testing.T) {
 	for i := 0; i < n; i++ {
 		peerIndexes[i] = i
 	}
-
 	addPeersToChannel(channelName, gossips, peerIndexes)
 
 	waitForFullMembershipOrFailNow(t, channelName, gossips, n, TIMEOUT, time.Second*2)

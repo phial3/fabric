@@ -35,6 +35,8 @@ const (
 	// ChannelGroupKey is the name of the channel group
 	ChannelGroupKey = "Channel"
 
+	OrderersKey = "Orderers"
+
 	// CapabilitiesKey is the name of the key which refers to capabilities, it appears at the channel,
 	// application, and orderer levels and this constant is used for all three.
 	CapabilitiesKey = "Capabilities"
@@ -50,7 +52,7 @@ type ChannelValues interface {
 	// Merkle tree to compute the BlockData hash
 	BlockDataHashingStructureWidth() uint32
 
-	// OrdererAddresses returns the list of valid orderer addresses to connect to to invoke Broadcast/Deliver
+	// OrdererAddresses returns the list of valid orderer addresses to connect to invoke Broadcast/Deliver
 	OrdererAddresses() []string
 }
 
@@ -59,6 +61,7 @@ type ChannelProtos struct {
 	HashingAlgorithm          *cb.HashingAlgorithm
 	BlockDataHashingStructure *cb.BlockDataHashingStructure
 	OrdererAddresses          *cb.OrdererAddresses
+	Orderers                  *cb.Orderers
 	Consortium                *cb.Consortium
 	Capabilities              *cb.Capabilities
 }
@@ -148,7 +151,7 @@ func (cc *ChannelConfig) BlockDataHashingStructureWidth() uint32 {
 	return cc.protos.BlockDataHashingStructure.Width
 }
 
-// OrdererAddresses returns the list of valid orderer addresses to connect to to invoke Broadcast/Deliver
+// OrdererAddresses returns the list of valid orderer addresses to connect to invoke Broadcast/Deliver
 func (cc *ChannelConfig) OrdererAddresses() []string {
 	return cc.protos.OrdererAddresses.Addresses
 }

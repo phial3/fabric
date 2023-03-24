@@ -118,6 +118,8 @@ type PrivateDataConfig struct {
 	// from other peers. A chance for eligible deprioritized missing data
 	// would be given after every DeprioritizedDataReconcilerInterval
 	DeprioritizedDataReconcilerInterval time.Duration
+	// PurgedKeyAuditLogging specifies whether to log private data keys purged from private data store (INFO level) when explicitly purged via chaincode
+	PurgedKeyAuditLogging bool
 }
 
 // HistoryDBConfig is a structure used to configure the transaction history database.
@@ -322,6 +324,8 @@ type TxSimulator interface {
 	SetPrivateDataMultipleKeys(namespace, collection string, kvs map[string][]byte) error
 	// DeletePrivateData deletes the given tuple <namespace, collection, key> from private data
 	DeletePrivateData(namespace, collection, key string) error
+	// PurgePrivateData purges the given tuple <namespace, collection, key> from private data
+	PurgePrivateData(namespace, collection, key string) error
 	// SetPrivateDataMetadata sets the metadata associated with an existing key-tuple <namespace, collection, key>
 	SetPrivateDataMetadata(namespace, collection, key string, metadata map[string][]byte) error
 	// DeletePrivateDataMetadata deletes the metadata associated with an existing key-tuple <namespace, collection, key>

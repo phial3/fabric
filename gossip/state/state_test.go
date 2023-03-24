@@ -416,7 +416,7 @@ func newPeerNodeWithGossipWithValidatorWithMetrics(logger gossiputil.Logger, id 
 
 	mspID := "Org1MSP"
 	capabilityProvider := &capabilitymock.CapabilityProvider{}
-	appCapability := &capabilitymock.AppCapabilities{}
+	appCapability := &capabilitymock.ApplicationCapabilities{}
 	capabilityProvider.On("Capabilities").Return(appCapability)
 	appCapability.On("StorePvtDataOfInvalidTx").Return(true)
 	coord := privdata.NewCoordinator(mspID, privdata.Support{
@@ -1767,9 +1767,8 @@ func waitUntilTrueOrTimeout(t *testing.T, predicate func() bool, timeout time.Du
 		t.Log("Done.")
 		break
 	case <-time.After(timeout):
-		t.Fatal("Timeout has expired")
 		close(ch)
-		break
+		t.Fatal("Timeout has expired")
 	}
 	t.Log("Stop waiting until timeout or true")
 }
